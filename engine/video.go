@@ -152,7 +152,7 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 		outFile := opx.Ternary(quality == 1, fmt.Sprintf(outputFilenameFormat, m.ConvertSecondToTimeCode(t)), fmt.Sprintf(outputFilenameFormat, m.ConvertSecondToTimeCode(t), quality))
 		ffmOptions := &exec.FFmpegArgsOptions{
 			InputFile:      inputFile.AbsolutePath,
-			InputStartTime: nullable.FromInt(int(t / 1000)),
+			InputStartTime: nullable.FromInt(int(t)),
 
 			OutputFile:       outFile,
 			OutputFrameCount: nullable.FromInt(1),
