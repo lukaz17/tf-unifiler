@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"path"
 	"strconv"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/tforceaio/tf-unifiler-go/config"
 	"github.com/tforceaio/tf-unifiler-go/filesystem"
 	"github.com/tforceaio/tf-unifiler-go/filesystem/exec"
+	"github.com/tforceaio/tf-unifiler-go/media"
 	"github.com/tforceaio/tf-unifiler-go/x/nullable"
 )
 
@@ -127,7 +127,7 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 		return err
 	}
 	limitF64 := opx.Ternary(limit == 0, duration, math.Min(duration, limit))
-	limitMs := big.NewInt(int64(limitF64 * float64(1000)))
+	limitMs := uint64(limitF64 * float64(1000))
 
 	if !filesystem.IsDirectoryExist(outputRoot) {
 		err = filesystem.CreateDirectoryRecursive(outputRoot)
@@ -144,15 +144,15 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 		m.logger.Info().Str("param", vfHDR).Msg("The video is HDR, Unifiler will attempt to apply colorspace conversion.")
 	}
 	offsetDef, intervalDef := m.DefaultScreenshotParameter(limitMs)
-	offsetMs := opx.Ternary(offset == 0, offsetDef, big.NewInt(int64(offset*1000)))
-	intervalMs := opx.Ternary(interval == 0, intervalDef, big.NewInt(int64(interval*1000)))
+	offsetMs := opx.Ternary(offset == 0, offsetDef, uint64(offset*1000))
+	intervalMs := opx.Ternary(interval == 0, intervalDef, uint64(interval*1000))
 	qualityFactor := opx.Ternary(quality == 0, 1, quality)
-	outputFilenameFormat := opx.Ternary(quality == 1, path.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), path.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
-	for t := offsetMs; t.Cmp(limitMs) <= 0; t = new(big.Int).Add(t, intervalMs) {
+	outputFilenameFormat := opx.Ternary(quality <= 2, path.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), path.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
+	for t := offsetMs; t <= limitMs; t = t + intervalMs {
 		outFile := opx.Ternary(quality == 1, fmt.Sprintf(outputFilenameFormat, m.ConvertSecondToTimeCode(t)), fmt.Sprintf(outputFilenameFormat, m.ConvertSecondToTimeCode(t), quality))
 		ffmOptions := &exec.FFmpegArgsOptions{
 			InputFile:      inputFile.AbsolutePath,
-			InputStartTime: nullable.FromInt(int(t.Int64()) / 1000),
+			InputStartTime: nullable.FromInt(int(t / 1000)),
 
 			OutputFile:       outFile,
 			OutputFrameCount: nullable.FromInt(1),
@@ -169,7 +169,7 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 			return err
 		}
 		log.Info().
-			Float64("time", float64(t.Int64())/float64(1000)).
+			Float64("time", float64(t)/1000).
 			Str("output", outFile).
 			Msg("Created screenshot.")
 	}
@@ -178,36 +178,36 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 }
 
 // Return timecode string from timeMs in miliseconds.
-func (m *VideoModule) ConvertSecondToTimeCode(timeMs *big.Int) string {
-	hr := new(big.Int).Div(timeMs, big.NewInt(3600000))
-	timeMs = new(big.Int).Mod(timeMs, big.NewInt(3600000))
-	mm := new(big.Int).Div(timeMs, big.NewInt(60000))
-	timeMs = new(big.Int).Mod(timeMs, big.NewInt(60000))
-	sc := new(big.Int).Div(timeMs, big.NewInt(1000))
-	ms := new(big.Int).Mod(timeMs, big.NewInt(1000))
+func (m *VideoModule) ConvertSecondToTimeCode(timeMs uint64) string {
+	hr := timeMs / 3600000
+	timeMs = timeMs % 3600000
+	mm := timeMs / 60000
+	timeMs = timeMs % 60000
+	sc := timeMs / 1000
+	ms := timeMs % 1000
 
-	return fmt.Sprintf("%d_%02d_%02d_%03d", hr.Int64(), mm.Int64(), sc.Int64(), ms.Int64())
+	return fmt.Sprintf("%d_%02d_%02d_%03d", hr, mm, sc, ms)
 }
 
 // Return offset/interval paramteters for video with lengthMs in miliseconds.
-func (m *VideoModule) DefaultScreenshotParameter(lengthMs *big.Int) (*big.Int, *big.Int) {
+func (m *VideoModule) DefaultScreenshotParameter(lengthMs uint64) (uint64, uint64) {
 	defaults := []struct {
-		duration *big.Int
-		offset   *big.Int
-		interval *big.Int
+		duration   uint64
+		offset     uint64
+		interval   uint64
+		xrf        uint64
+		breakpoint uint64
 	}{
-		{big.NewInt(120), big.NewInt(1000), big.NewInt(2500)},       // 0 -> 47
-		{big.NewInt(420000), big.NewInt(1300), big.NewInt(4300)},    // 27 -> 97
-		{big.NewInt(1200000), big.NewInt(1700), big.NewInt(7100)},   // 59 -> 168
-		{big.NewInt(3600000), big.NewInt(2300), big.NewInt(12300)},  // 97 -> 292
-		{big.NewInt(10800000), big.NewInt(2700), big.NewInt(12700)}, // 283 -> 850
+		{10800000, 5000, 24000, 945, 450},
+		{2700000, 3000, 15000, 450, 180},
+		{15000, 2000, 10000, 340, 10},
 	}
 	for _, d := range defaults {
-		if lengthMs.Cmp(d.duration) < 0 {
-			return d.offset, d.interval
+		if lengthMs > d.duration {
+			return d.offset, media.DurationToInterval(lengthMs, d.interval, d.xrf, d.breakpoint)
 		}
 	}
-	return big.NewInt(3400), big.NewInt(17100) // 631 -> max
+	return 3, lengthMs / 2 // capture of middle of clip
 }
 
 // Decorator to log error occurred when calling handlers.
@@ -250,7 +250,7 @@ func VideoCmd() *cobra.Command {
 		},
 	}
 	screenshotCmd.Flags().StringP("file", "i", "", "Video file to take screenshot.")
-	screenshotCmd.Flags().IntP("quality", "q", 90, "Quality factor for screenshot in scale 1-100.")
+	screenshotCmd.Flags().IntP("quality", "q", 1, "Quality factor for screenshot in scale 2-31.")
 	screenshotCmd.Flags().StringP("output", "o", "", "Directory to save screenshots.")
 	rootCmd.AddCommand(screenshotCmd)
 
