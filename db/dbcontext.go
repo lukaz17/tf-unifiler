@@ -19,7 +19,7 @@ package db
 import (
 	"path/filepath"
 
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -36,8 +36,8 @@ type DbContext struct {
 // Target database will be migrated to match database models.
 func Connect(uri string) (*DbContext, error) {
 	parentDir := filepath.Dir(uri)
-	if !filesystem.IsDirectoryExist(parentDir) {
-		err := filesystem.CreateDirectoryRecursive(parentDir)
+	if !filesys.IsDirectoryExist(parentDir) {
+		err := filesys.CreateDirectoryRecursive(parentDir)
 		if err != nil {
 			return nil, err
 		}

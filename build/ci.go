@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 var GOBIN, _ = filepath.Abs(".bin")
@@ -42,7 +42,7 @@ func executablePath(name string, os string) string {
 func main() {
 	log.SetFlags(log.Lshortfile)
 
-	if !filesystem.IsFileExist(filepath.Join("build", "ci.go")) {
+	if !filesys.IsFileExist(filepath.Join("build", "ci.go")) {
 		log.Fatal("this script must be run from the root of the repository")
 	}
 

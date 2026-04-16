@@ -25,7 +25,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/tforce-io/tf-golib/opx"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 // Entrypoint for creating a ZeroLog logger instance.
@@ -60,8 +60,8 @@ func InitLogFile(useFS bool, workdingDir string) (*os.File, error) {
 		return nil, nil
 	}
 	logDir := path.Join(opx.Ternary(workdingDir == "", ".", workdingDir), "logs")
-	if !filesystem.IsExist(logDir) {
-		err := filesystem.CreateDirectoryRecursive(logDir)
+	if !filesys.IsExist(logDir) {
+		err := filesys.CreateDirectoryRecursive(logDir)
 		if err != nil {
 			return nil, err
 		}

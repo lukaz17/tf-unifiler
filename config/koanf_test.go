@@ -19,7 +19,7 @@ package config
 import (
 	"testing"
 
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 func TestFileConfig(t *testing.T) {
@@ -54,10 +54,10 @@ func prepareTests() {
 		"  x265: /usr/bin/x265",
 	}
 
-	if !filesystem.IsExist("../../.tests/config") {
-		filesystem.CreateDirectoryRecursive("../../.tests/config")
+	if !filesys.IsExist("../../.tests/config") {
+		filesys.CreateDirectoryRecursive("../../.tests/config")
 	}
-	if !filesystem.IsExist("../../.tests/config/unifiler.yml") {
-		filesystem.WriteLines("../../.tests/config/unifiler.yml", contents)
+	if !filesys.IsExist("../../.tests/config/unifiler.yml") {
+		filesys.WriteLines("../../.tests/config/unifiler.yml", contents)
 	}
 }

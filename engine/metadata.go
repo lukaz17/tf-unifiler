@@ -33,7 +33,7 @@ import (
 	"github.com/tforceaio/tf-unifiler-go/core"
 	"github.com/tforceaio/tf-unifiler-go/crypto/hasher"
 	"github.com/tforceaio/tf-unifiler-go/db"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 // MetadataModule handles user requests related file hashes.
@@ -55,7 +55,7 @@ func NewMetadataModule(c *Controller, cmdName string) *MetadataModule {
 func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []string, onlyObsoleted, invert, erase bool) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 	if len(inputs) == 0 {
@@ -70,7 +70,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 		Str("workspace", workspaceDir).
 		Msg("Start refining file system.")
 
-	contents, err := filesystem.List(inputs, true)
+	contents, err := filesys.List(inputs, true)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 			if erase {
 				err = os.Remove(c.AbsolutePath)
 			} else {
-				err = filesystem.CreateDirectoryRecursive(newFile.ParentPath())
+				err = filesys.CreateDirectoryRecursive(newFile.ParentPath())
 				if err != nil {
 					return err
 				}
@@ -143,7 +143,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string, delete bool) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 	if len(inputs) == 0 {
@@ -159,7 +159,7 @@ func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string,
 		Str("workspace", workspaceDir).
 		Msg("Start scanning files metadata.")
 
-	contents, err := filesystem.List(inputs, true)
+	contents, err := filesys.List(inputs, true)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string,
 func (m *MetadataModule) QueryHash(workspaceDir string, collections, sha256s []string, obsoleted bool) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 
@@ -237,7 +237,7 @@ func (m *MetadataModule) QueryHash(workspaceDir string, collections, sha256s []s
 func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 
@@ -292,7 +292,7 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 

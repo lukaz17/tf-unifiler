@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/tforce-io/tf-golib/opx"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
-	"github.com/tforceaio/tf-unifiler-go/filesystem/exec"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
+	"github.com/tforceaio/tf-unifiler-go/filesys/exec"
 )
 
 var majorVersion = 0
@@ -62,13 +62,13 @@ func version() string {
 func InitApp() *Controller {
 	cfg := NewController(true)
 
-	filesystem.SetLogger(cfg.ModuleLogger("filesystem"))
+	filesys.SetLogger(cfg.ModuleLogger("filesystem"))
 	exec.SetLogger(cfg.ModuleLogger("exec"))
 
 	pwd, _ := os.Getwd()
-	pwd, _ = filesystem.GetAbsPath(pwd)
+	pwd, _ = filesys.GetAbsPath(pwd)
 	exec, _ := os.Executable()
-	exec, _ = filesystem.GetAbsPath(exec)
+	exec, _ = filesys.GetAbsPath(exec)
 
 	cfg.Logger.Info().Msgf("TF UNIFILER v%s", version())
 	gitDate2, _ := time.Parse("20060102", gitDate)

@@ -30,7 +30,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler-go/crypto/hasher"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 	"github.com/tforceaio/tf-unifiler-go/parser"
 )
 
@@ -56,12 +56,12 @@ func NewMirrorModule(c *Controller, cmdName string) *MirrorModule {
 func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 	if checksumFile == "" {
 		return errors.New("checksum file is not set")
-	} else if !filesystem.IsFileExist(checksumFile) {
+	} else if !filesys.IsFileExist(checksumFile) {
 		return errors.New("checksum file is not found")
 	}
 	m.logger.Info().
@@ -84,7 +84,7 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	missingItems := []string{}
 	for _, l := range items {
 		cachePath := path.Join(workspaceRoot, l.Hash)
-		if !filesystem.IsFileExist(cachePath) {
+		if !filesys.IsFileExist(cachePath) {
 			missingItems = append(missingItems, l.Hash)
 		}
 	}
@@ -100,18 +100,18 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	}
 	targetRoot := targetDir
 	if targetRoot == "" {
-		checksumPath, _ := filesystem.GetAbsPath(checksumFile)
+		checksumPath, _ := filesys.GetAbsPath(checksumFile)
 		targetRoot, _ = path.Split(checksumPath)
 	} else {
-		targetRoot, _ = filesystem.GetAbsPath(targetDir)
+		targetRoot, _ = filesys.GetAbsPath(targetDir)
 	}
-	if filesystem.IsFileExist(targetRoot) {
+	if filesys.IsFileExist(targetRoot) {
 		return errors.New("a file with same name with target root existed")
 	}
 	for _, l := range items {
 		cachePath := path.Join(workspaceRoot, l.Hash)
-		targetPath := opx.Ternary(filesystem.IsAbsPath(l.Path), l.Path, path.Join(targetRoot, l.Path))
-		err := filesystem.CreateHardlink(cachePath, targetPath)
+		targetPath := opx.Ternary(filesys.IsAbsPath(l.Path), l.Path, path.Join(targetRoot, l.Path))
+		err := filesys.CreateHardlink(cachePath, targetPath)
 		if err != nil {
 			m.logger.Info().
 				Str("src", cachePath).
@@ -134,7 +134,7 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	if workspaceDir == "" {
 		return errors.New("workspace is not set")
-	} else if !filesystem.IsDirectoryExist(workspaceDir) {
+	} else if !filesys.IsDirectoryExist(workspaceDir) {
 		return errors.New("workspace is not found")
 	}
 	if len(inputs) == 0 {
@@ -146,7 +146,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 		Msg("Start scanning files")
 
 	workspaceRoot := MirrorWorkspaceRoot(workspaceDir)
-	contents, err := filesystem.List(inputs, true)
+	contents, err := filesys.List(inputs, true)
 	if err != nil {
 		return err
 	}
@@ -183,13 +183,13 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	for _, r := range hResults {
 		name := hex.EncodeToString(r.Hash)
 		cachePath := path.Join(workspaceRoot, name)
-		if filesystem.IsFileExist(cachePath) {
+		if filesys.IsFileExist(cachePath) {
 			m.logger.Info().
 				Str("src", r.Path).
 				Str("cache", cachePath).
 				Msg("Skipped. File is already cached.")
 		} else {
-			err := filesystem.CreateHardlink(r.Path, cachePath)
+			err := filesys.CreateHardlink(r.Path, cachePath)
 			if err != nil {
 				m.logger.Info().
 					Str("src", r.Path).
@@ -205,10 +205,10 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	}
 
 	currentTimestamp := time.Now().UnixMilli()
-	rollbackFilePath := filesystem.Join(workspaceRoot, "mirror-"+strconv.FormatInt(currentTimestamp, 10)+".json")
+	rollbackFilePath := filesys.Join(workspaceRoot, "mirror-"+strconv.FormatInt(currentTimestamp, 10)+".json")
 	fContent, _ := json.Marshal(mappings)
 	fContents := []string{string(fContent)}
-	err = filesystem.WriteLines(rollbackFilePath, fContents)
+	err = filesys.WriteLines(rollbackFilePath, fContents)
 	if err == nil {
 		m.logger.Info().
 			Int("lineCount", len(fContents)).

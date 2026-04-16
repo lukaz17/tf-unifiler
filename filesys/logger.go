@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with TF Unifiler. If not, see <https://www.gnu.org/licenses/>.
 
-package filesystem
+package filesys
 
 import (
 	"github.com/rs/zerolog"

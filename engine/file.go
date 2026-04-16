@@ -29,7 +29,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler-go/crypto/hasher"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 // Struct FileRenameMapping stores old and new filename after renaming for rollback.
@@ -60,7 +60,7 @@ func (m *FileModule) Hash(inputs []string) error {
 		Strs("files", inputs).
 		Msg("Start hashing files.")
 
-	contents, err := filesystem.List(inputs, true)
+	contents, err := filesys.List(inputs, true)
 	if err != nil {
 		return err
 	}
@@ -125,12 +125,12 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		return errors.New("inputs is empty")
 	}
 
-	contents, err := filesystem.List(inputs, false)
+	contents, err := filesys.List(inputs, false)
 	if err != nil {
 		return err
 	}
 
-	files := []*filesystem.FsEntry{}
+	files := []*filesys.FsEntry{}
 	for _, c := range contents {
 		if !c.IsDir {
 			files = append(files, c)
@@ -161,7 +161,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		parent := path.Dir(e.Path)
 		ext := path.Ext(e.Path)
 		targetName := prefix + hex.EncodeToString(e.Hash) + ext
-		target := opx.Ternary(parent == ".", targetName, filesystem.Join(parent, targetName))
+		target := opx.Ternary(parent == ".", targetName, filesys.Join(parent, targetName))
 		mapping := &FileRenameMapping{
 			Source: e.Path,
 			Target: target,
@@ -170,10 +170,10 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 	}
 
 	currentTimestamp := time.Now().UnixMilli()
-	rollbackFilePath := filesystem.Join(".", "unifiler-file-rename-"+strconv.FormatInt(currentTimestamp, 10)+".json")
+	rollbackFilePath := filesys.Join(".", "unifiler-file-rename-"+strconv.FormatInt(currentTimestamp, 10)+".json")
 	fContent, _ := json.Marshal(mappings)
 	fContents := []string{string(fContent)}
-	err = filesystem.WriteLines(rollbackFilePath, fContents)
+	err = filesys.WriteLines(rollbackFilePath, fContents)
 	if err == nil {
 		m.logger.Info().
 			Int("lineCount", len(fContents)).
@@ -194,7 +194,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 				Msg("Skipped. File is already renamed.")
 			continue
 		}
-		if filesystem.IsFileExist(e.Target) {
+		if filesys.IsFileExist(e.Target) {
 			m.logger.Info().
 				Str("src", e.Source).
 				Str("dest", e.Target).

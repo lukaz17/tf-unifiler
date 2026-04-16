@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler-go/crypto/hasher"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 // ChecksumModule handles user requests related checksum file creation and verification.
@@ -54,7 +54,7 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 		Str("output", output).
 		Msg("Start computing hashes.")
 
-	contents, err := filesystem.List(inputs, true)
+	contents, err := filesys.List(inputs, true)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 		outputInternal := opx.Ternary(output == "", "checksum", output)
 		// substitute file extension. for more information: https://go.dev/play/p/0wZcne8ZC8G
 		oPath := fmt.Sprintf("%s.%s", strings.TrimSuffix(outputInternal, filepath.Ext(outputInternal)), a)
-		err := filesystem.WriteLines(oPath, fContents)
+		err := filesys.WriteLines(oPath, fContents)
 		if err != nil {
 			return err
 		}

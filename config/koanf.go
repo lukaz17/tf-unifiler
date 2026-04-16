@@ -27,7 +27,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
 )
 
 // Singleton instance of configuration.
@@ -39,7 +39,7 @@ var cfg *RootConfig
 // YML file will only be used if useFS is true.
 func BuildConfig(useFS bool, f string) (*RootConfig, error) {
 	k := defaultConfig()
-	if useFS && filesystem.IsFileExist(f) {
+	if useFS && filesys.IsFileExist(f) {
 		k, _ = configFromYaml(k, f)
 	}
 	k, _ = configFromEnv(k)
@@ -59,13 +59,13 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 	configFile := "unifiler.yml"
 	if isPortable {
 		exec, _ := os.Executable()
-		exec, _ = filesystem.GetAbsPath(exec)
+		exec, _ = filesys.GetAbsPath(exec)
 		configFile = path.Join(path.Dir(exec), "unifiler.yml")
 	} else if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		home := os.Getenv("HOME")
 		configFile = path.Join(home, ".config", "unifiler", "unifiler.yml")
 	} else if runtime.GOOS == "windows" {
-		appData := filesystem.NormalizePath(os.Getenv("APPDATA"))
+		appData := filesys.NormalizePath(os.Getenv("APPDATA"))
 		configFile = path.Join(appData, "Unifiler", "unifiler.yml")
 	}
 	var err error
@@ -83,9 +83,9 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 // Detect whether the app is running in portable mode.
 func IsPortable() bool {
 	exec, _ := os.Executable()
-	exec, _ = filesystem.GetAbsPath(exec)
+	exec, _ = filesys.GetAbsPath(exec)
 	portableFile := path.Join(path.Dir(exec), "unifiler.portable")
-	return filesystem.IsFileExist(portableFile)
+	return filesys.IsFileExist(portableFile)
 }
 
 // Returns default values for RootConfig

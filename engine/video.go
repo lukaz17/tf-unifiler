@@ -29,8 +29,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler-go/config"
-	"github.com/tforceaio/tf-unifiler-go/filesystem"
-	"github.com/tforceaio/tf-unifiler-go/filesystem/exec"
+	"github.com/tforceaio/tf-unifiler-go/filesys"
+	"github.com/tforceaio/tf-unifiler-go/filesys/exec"
 	"github.com/tforceaio/tf-unifiler-go/x/nullable"
 )
 
@@ -52,14 +52,14 @@ func NewVideoModule(c *Controller, cmdName string) *VideoModule {
 func (m *VideoModule) Info(file string) error {
 	if file == "" {
 		return errors.New("input is not set")
-	} else if !filesystem.IsFileExist(file) {
+	} else if !filesys.IsFileExist(file) {
 		return errors.New("input file not found")
 	}
 	m.logger.Info().
 		Str("input", file).
 		Msg("Start analyzing file information.")
 
-	inputFile, _ := filesystem.GetAbsPath(file)
+	inputFile, _ := filesys.GetAbsPath(file)
 	miFile := inputFile + ".mediainfo.json"
 	miOptions := &exec.MediaInfoOptions{
 		InputFile:    inputFile,
@@ -88,7 +88,7 @@ func (m *VideoModule) Info(file string) error {
 func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, quality int, outputDir string) error {
 	if file == "" {
 		return errors.New("input is not set")
-	} else if !filesystem.IsFileExist(file) {
+	} else if !filesys.IsFileExist(file) {
 		return errors.New("input file not found")
 	}
 	if outputDir == "" {
@@ -106,9 +106,9 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 		Str("output", outputDir).
 		Msg("Taking screenshot for video file.")
 
-	inputFile, _ := filesystem.CreateEntry(file)
+	inputFile, _ := filesys.CreateEntry(file)
 	outputRoot := opx.Ternary(outputDir == "", path.Dir(inputFile.AbsolutePath), outputDir)
-	if filesystem.IsFileExist(outputRoot) {
+	if filesys.IsFileExist(outputRoot) {
 		return errors.New("a file with same name with target root existed")
 	}
 	miOptions := &exec.MediaInfoOptions{
@@ -129,8 +129,8 @@ func (m *VideoModule) Screenshot(file string, interval, offset, limit float64, q
 	limitF64 := opx.Ternary(limit == 0, duration, math.Min(duration, limit))
 	limitMs := big.NewInt(int64(limitF64 * float64(1000)))
 
-	if !filesystem.IsDirectoryExist(outputRoot) {
-		err = filesystem.CreateDirectoryRecursive(outputRoot)
+	if !filesys.IsDirectoryExist(outputRoot) {
+		err = filesys.CreateDirectoryRecursive(outputRoot)
 		if err != nil {
 			return err
 		}
