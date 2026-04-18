@@ -19,10 +19,11 @@ package checksum
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
-type Parser struct {
+type parser struct {
 	s   *scanner
 	buf struct {
 		tok token  // last read token
@@ -31,11 +32,11 @@ type Parser struct {
 	}
 }
 
-func NewParser(r io.Reader) *Parser {
-	return &Parser{s: NewScanner(r)}
+func newParser(r io.Reader) *parser {
+	return &parser{s: NewScanner(r)}
 }
 
-func (p *Parser) Parse() ([]*ChecksumItem, error) {
+func (p *parser) Parse() ([]*ChecksumItem, error) {
 	items := []*ChecksumItem{}
 
 	for {
@@ -106,7 +107,7 @@ func (p *Parser) Parse() ([]*ChecksumItem, error) {
 	return items, nil
 }
 
-func (p *Parser) scan() (token, string) {
+func (p *parser) scan() (token, string) {
 	if p.buf.n != 0 {
 		p.buf.n = 0
 		return p.buf.tok, p.buf.lit
@@ -117,6 +118,21 @@ func (p *Parser) scan() (token, string) {
 	return tok, lit
 }
 
-func (p *Parser) unscan() {
+func (p *parser) unscan() {
 	p.buf.n = 1
+}
+
+func ParseSha256(r io.Reader) ([]*ChecksumItem, error) {
+	parser := newParser(r)
+	items, err := parser.Parse()
+	if err != nil {
+		return items, err
+	}
+	hashCheckRegex := regexp.MustCompile("^[0-9A-Fa-f]{64}$")
+	for _, l := range items {
+		if !hashCheckRegex.MatchString(l.Hash) {
+			return []*ChecksumItem{}, fmt.Errorf("invalid SHA-256 hash '%s'", l.Hash)
+		}
+	}
+	return items, err
 }

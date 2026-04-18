@@ -30,8 +30,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler-go/crypto/hasher"
+	"github.com/tforceaio/tf-unifiler-go/encoding/checksum"
 	"github.com/tforceaio/tf-unifiler-go/filesys"
-	"github.com/tforceaio/tf-unifiler-go/parser"
 )
 
 // Struct FileMirrorMapping stores old and new filename after mirroring for rollback.
@@ -75,7 +75,7 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	if err != nil {
 		return err
 	}
-	items, err := parser.ParseSha256(checksumReader)
+	items, err := checksum.ParseSha256(checksumReader)
 	if err != nil {
 		return err
 	}
