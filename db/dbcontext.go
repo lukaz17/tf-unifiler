@@ -19,8 +19,8 @@ package db
 import (
 	"path/filepath"
 
+	"github.com/glebarez/sqlite"
 	"github.com/tforceaio/tf-unifiler-go/filesys"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
