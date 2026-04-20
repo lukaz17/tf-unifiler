@@ -47,6 +47,82 @@ func NewMetadataModule(c *Controller, cmdName string) *MetadataModule {
 	}
 }
 
+// Index whole structure and compute hashes using common algorithms (CRC32, MD5, SHA-1, SHA-256, SHA-512)
+// for input (folder) and add them to archive.
+func (m *MetadataModule) Index(workspaceDir string, input string, archiveName string, update bool) error {
+	if err := validateWorkspace(workspaceDir); err != nil {
+		return err
+	}
+	if input == "" {
+		return errors.New("input is not set")
+	}
+
+	// Resolve . and .. to an actual absolute path before any existence check.
+	absInput, err := filepath.Abs(input)
+	if err != nil {
+		return fmt.Errorf("failed to resolve input path: %w", err)
+	}
+
+	if !filesys.IsDirectoryExist(absInput) {
+		return errors.New("input is not found or is not a directory")
+	}
+
+	// Determine archive name: user-supplied value or the directory's base name.
+	if archiveName == "" {
+		// A root directory has no meaningful base name (Dir equals itself).
+		if filepath.Dir(absInput) == absInput {
+			return errors.New("cannot determine archive name from root directory, please specify --name")
+		}
+		archiveName = filepath.Base(absInput)
+	}
+
+	m.logger.Info().
+		Str("input", absInput).
+		Str("name", archiveName).
+		Str("workspace", workspaceDir).
+		Msg("Start indexing.")
+
+	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
+	fhResults, err := listAndHashFiles([]string{absInput}, algos, true)
+	if err != nil {
+		return err
+	}
+
+	hResults := []*core.FileMultiHash{}
+	for _, r := range fhResults {
+		// Compute path relative to the input directory so ArchiveContent paths are
+		// portable and not tied to the machine's absolute directory layout.
+		relPath, err := filepath.Rel(absInput, r.Entry.AbsolutePath)
+		if err != nil {
+			return fmt.Errorf("failed to compute relative path for %s: %w", r.Entry.AbsolutePath, err)
+		}
+		m.logger.Info().
+			Strs("algos", algos).
+			Str("path", relPath).
+			Int("size", r.Hashes[0].Size).
+			Msg("Hashed file.")
+		fileMultiHash := &core.FileMultiHash{
+			Crc32:     r.Hashes[0].Hash,
+			Md5:       r.Hashes[1].Hash,
+			Sha1:      r.Hashes[2].Hash,
+			Sha256:    r.Hashes[3].Hash,
+			Sha512:    r.Hashes[4].Hash,
+			Size:      uint32(r.Hashes[0].Size),
+			Directory: filepath.Dir(relPath),
+			FileName:  r.Entry.Name,
+		}
+		hResults = append(hResults, fileMultiHash)
+	}
+
+	dbFile := MetadataWorkspaceDatabase(workspaceDir)
+	ctx, err := db.Connect(dbFile)
+	if err != nil {
+		return err
+	}
+
+	return m.saveIResults(ctx, archiveName, update, hResults)
+}
+
 // Compute hashes of inputs (files/folders) and refining their contents.
 // All files in collections are used by default for matching, onlyObsoleted will use obsoleted files only.
 // Invert will match non-existed files in database instead.
@@ -126,7 +202,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 	return nil
 }
 
-// Scan and compute hashes using common algorithms (MD5, SHA-1, SHA-256, SHA-512) for inputs (files/folders)
+// Scan and compute hashes using common algorithms (CRC32, MD5, SHA-1, SHA-256, SHA-512) for inputs (files/folders)
 // and add them to collection.
 // Mark them as obseleted if delete is true.
 func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string, delete bool) error {
@@ -316,6 +392,85 @@ func (m *MetadataModule) logError(err error) {
 	logProgramError(m.logger, err)
 }
 
+// Save indexing results to metadata database along with their respective archives.
+func (m *MetadataModule) saveIResults(ctx *db.DbContext, archiveName string, update bool, hResults []*core.FileMultiHash) error {
+	sessionID, err := uuid.NewV7()
+	if err != nil {
+		m.logger.Info().Msg("Failed to generate SessionID.")
+		return err
+	}
+	// Save Session
+	session := db.NewSession(sessionID, time.Now().UTC())
+	err = ctx.SaveSessions([]*db.Session{session})
+	if err != nil {
+		m.logger.Info().Msg("Failed to save Session.")
+		return err
+	}
+	// Save Hashes
+	hashes := make([]*db.Hash, len(hResults))
+	for i, res := range hResults {
+		hashes[i] = db.NewHash(res, false)
+		hashes[i].SessionID = sessionID
+	}
+	err = ctx.SaveHashes(hashes)
+	if err != nil {
+		m.logger.Info().Msg("Failed to save Hashes.")
+		return err
+	}
+	// Reload Hashes
+	sha256s := make([]string, len(hResults))
+	for i, res := range hResults {
+		sha256s[i] = res.Sha256.HexStr()
+	}
+	hashes, err = ctx.GetHashesBySha256s(sha256s)
+	if err != nil {
+		m.logger.Info().Msg("Failed to reload Hashes.")
+		return err
+	}
+	hashesMap := map[string]uuid.UUID{}
+	for _, hash := range hashes {
+		hashesMap[hash.Sha256] = hash.ID
+	}
+	// Validate Archive name
+	existingArchive, err := ctx.GetArchiveByName(archiveName)
+	if err != nil {
+		m.logger.Info().Msg("Failed to get Archive.")
+		return err
+	}
+	if existingArchive != nil && !update {
+		return fmt.Errorf("archive %q already exists, use --update to add contents to it", archiveName)
+	}
+	// Save Archive
+	archive := db.NewArchive(archiveName)
+	archive.SessionID = sessionID
+	err = ctx.SaveArchives([]*db.Archive{archive})
+	if err != nil {
+		m.logger.Info().Msg("Failed to save Archive.")
+		return err
+	}
+	// Reload Archive
+	archive, err = ctx.GetArchiveByName(archiveName)
+	if err != nil {
+		m.logger.Info().Msg("Failed to reload Archive.")
+		return err
+	}
+	// Save ArchiveContents
+	archiveContents := make([]*db.ArchiveContent, len(hResults))
+	for i, res := range hResults {
+		fileName := strfmt.NewFileNameFromStr(res.FileName)
+		archiveContents[i] = db.NewArchiveContent(archive.ID, res.Directory, fileName.Name, fileName.Extension, hashesMap[res.Sha256.HexStr()])
+		archiveContents[i].SessionID = sessionID
+	}
+	err = ctx.SaveArchiveContents(archiveContents)
+	if err != nil {
+		m.logger.Info().Msg("Failed to save ArchiveContents.")
+		return err
+	}
+
+	m.logger.Info().Msg("Saved archive metadata successfully.")
+	return nil
+}
+
 // Save hashing results to metadata database along with their respective collections.
 func (m *MetadataModule) saveHResults(ctx *db.DbContext, hResults []*core.FileMultiHash, ignore bool, collections []string) (err error) {
 	sessionID, err := uuid.NewV7()
@@ -415,6 +570,26 @@ func MetadataCmd() *cobra.Command {
 		Short: "Centralized file metadata database.",
 	}
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Directory contains Unifiler workspace.")
+
+	indexCmd := &cobra.Command{
+		Use:   "index <input>",
+		Short: "Index input's content.",
+		Run: func(cmd *cobra.Command, args []string) {
+			c := InitApp()
+			defer c.Close()
+			flags := ParseMetadataFlags(cmd, args)
+			m := NewMetadataModule(c, "archive")
+			input := ""
+			if len(flags.Inputs) > 0 {
+				input = flags.Inputs[0]
+			}
+			m.logError(m.Index(flags.WorkspaceDir, input, flags.Name, flags.Update))
+		},
+	}
+	indexCmd.Flags().StringArrayP("inputs", "i", []string{}, "Directory to archive.")
+	indexCmd.Flags().StringP("name", "n", "", "Name for the archive in database (Defaults to directory name)")
+	indexCmd.Flags().Bool("update", false, "Allow update current archive if exists.")
+	rootCmd.AddCommand(indexCmd)
 
 	refineCmd := &cobra.Command{
 		Use:   "refine <input>...",
@@ -519,6 +694,7 @@ type MetadataFlags struct {
 	Invert        bool
 	Name          string
 	OnlyObsoleted bool
+	Update        bool
 	WorkspaceDir  string
 }
 
@@ -533,6 +709,7 @@ func ParseMetadataFlags(cmd *cobra.Command, args []string) *MetadataFlags {
 	invert, _ := cmd.Flags().GetBool("invert")
 	name, _ := cmd.Flags().GetString("name")
 	obsoleted, _ := cmd.Flags().GetBool("obsoleted")
+	update, _ := cmd.Flags().GetBool("update")
 	workspaceDir, _ := cmd.Flags().GetString("workspace")
 	inputs = append(args, inputs...)
 
@@ -546,6 +723,7 @@ func ParseMetadataFlags(cmd *cobra.Command, args []string) *MetadataFlags {
 		Invert:        invert,
 		Name:          name,
 		OnlyObsoleted: obsoleted,
+		Update:        update,
 		WorkspaceDir:  workspaceDir,
 	}
 }
