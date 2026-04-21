@@ -202,7 +202,7 @@ func (m *MirrorModule) logError(err error) {
 
 // Return directory path to store Mirror module's ouputs inside Unifiler workspace.
 func MirrorWorkspaceRoot(workspaceDir string) string {
-	return filepath.Join(workspaceDir, ".unifiler", "mirror")
+	return filepath.Join(workspaceDir, "mirror")
 }
 
 // Define Cobra Command for Mirror module.
