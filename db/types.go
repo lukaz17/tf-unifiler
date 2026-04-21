@@ -18,24 +18,36 @@ package db
 
 import (
 	"database/sql/driver"
+	"encoding/hex"
 	"fmt"
 )
 
-// Bytes32 is a 32-byte value that can be stored as a BLOB column in SQLite.
+// Bytes32 is a 32-byte value that can be stored as a Text column in SQLite.
 type Bytes32 [32]byte
 
 func (h Bytes32) Value() (driver.Value, error) {
-	return h[:], nil
+	return hex.EncodeToString(h[:]), nil
 }
 
 func (h *Bytes32) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("Bytes32: expected []byte, got %T", value)
+	switch v := value.(type) {
+	case string:
+		b, err := hex.DecodeString(v)
+		if err != nil {
+			return fmt.Errorf("Bytes32: invalid hex string: %w", err)
+		}
+		if len(b) != 32 {
+			return fmt.Errorf("Bytes32: expected 32 bytes, got %d", len(b))
+		}
+		copy(h[:], b)
+		return nil
+	case []byte:
+		if len(v) == 32 {
+			copy(h[:], v)
+			return nil
+		}
+		return h.Scan(string(v))
+	default:
+		return fmt.Errorf("Bytes32: unable to scan type %T", value)
 	}
-	if len(b) != 32 {
-		return fmt.Errorf("Bytes32: expected 32 bytes, got %d", len(b))
-	}
-	copy(h[:], b)
-	return nil
 }
