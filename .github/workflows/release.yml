@@ -1,0 +1,233 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BINARY_NAME: unifiler
+  CGO_ENABLED: "0"
+  CMD_NAME: .
+  GO_VERSION: "1.25.7"
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install zstd (MacOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install zstd
+
+      - name: Create build output directories
+        shell: bash
+        run: mkdir -p ./build/amd64 ./build/arm64
+
+      - name: Get Git Info
+        shell: bash
+        run: |
+          echo "GIT_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "GIT_DATE=$(git log -n1 --pretty='format:%cd' --date=format:'%Y%m%d')" >> $GITHUB_ENV
+          echo "GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+          echo "GIT_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
+      # ==============================
+      #   Build & Compress Binaries
+      # ==============================
+
+      - name: Build & Compress (Linux AMD64)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$GIT_BRANCH" \
+            -o ./build/amd64/$BINARY_NAME $CMD_NAME
+          tar -cf - -C ./build/amd64 $BINARY_NAME | zstd -o ./build/amd64/$BINARY_NAME-$GIT_TAG-linux-amd64.tar.zst
+
+      - name: Build & Compress (Linux ARM64)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          GOOS=linux GOARCH=arm64 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$GIT_BRANCH" \
+            -o ./build/arm64/$BINARY_NAME $CMD_NAME
+          tar -cf - -C ./build/arm64 $BINARY_NAME | zstd -o ./build/arm64/$BINARY_NAME-$GIT_TAG-linux-arm64.tar.zst
+
+      - name: Build & Compress (MacOS AMD64)
+        if: matrix.os == 'macos-latest'
+        run: |
+          GOOS=darwin GOARCH=amd64 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$GIT_BRANCH" \
+            -o ./build/amd64/$BINARY_NAME $CMD_NAME
+          tar -cf - -C ./build/amd64 $BINARY_NAME | zstd -o ./build/amd64/$BINARY_NAME-$GIT_TAG-macos-amd64.tar.zst
+
+      - name: Build & Compress (MacOS ARM64)
+        if: matrix.os == 'macos-latest'
+        run: |
+          GOOS=darwin GOARCH=arm64 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$GIT_BRANCH" \
+            -o ./build/arm64/$BINARY_NAME $CMD_NAME
+          tar -cf - -C ./build/arm64 $BINARY_NAME | zstd -o ./build/arm64/$BINARY_NAME-$GIT_TAG-macos-arm64.tar.zst
+
+      - name: Build & Compress (Windows AMD64)
+        if: matrix.os == 'windows-latest'
+        run: |
+          $env:GOOS="windows"; $env:GOARCH="amd64"
+          go build `
+            -trimpath `
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$env:GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$env:GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$env:GIT_BRANCH" `
+            -o ./build/amd64/$env:BINARY_NAME.exe $env:CMD_NAME
+          Compress-Archive -Path ./build/amd64/$env:BINARY_NAME.exe -DestinationPath ./build/amd64/$env:BINARY_NAME-$env:GIT_TAG-windows-amd64.zip
+
+      - name: Build & Compress (Windows ARM64)
+        if: matrix.os == 'windows-latest'
+        run: |
+          $env:GOOS="windows"; $env:GOARCH="arm64"
+          go build `
+            -trimpath `
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$env:GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$env:GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$env:GIT_BRANCH" `
+            -o ./build/arm64/$env:BINARY_NAME.exe $env:CMD_NAME
+          Compress-Archive -Path ./build/arm64/$env:BINARY_NAME.exe -DestinationPath ./build/arm64/$env:BINARY_NAME-$env:GIT_TAG-windows-arm64.zip
+
+      # ==============================
+      #   Upload artifacts
+      # ==============================
+
+      - name: Upload Artifacts (Linux AMD64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: linux-amd64
+          path: ./build/amd64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-linux-amd64.tar.zst
+
+      - name: Upload Artifacts (Linux ARM64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: linux-arm64
+          path: ./build/arm64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-linux-arm64.tar.zst
+
+      - name: Upload Artifacts (MacOS AMD64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-latest'
+        with:
+          name: macos-amd64
+          path: ./build/amd64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-macos-amd64.tar.zst
+
+      - name: Upload Artifacts (MacOS ARM64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-latest'
+        with:
+          name: macos-arm64
+          path: ./build/arm64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-macos-arm64.tar.zst
+
+      - name: Upload Artifacts (Windows AMD64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: windows-amd64
+          path: ./build/amd64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-windows-amd64.zip
+
+      - name: Upload Artifacts (Windows ARM64)
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: windows-arm64
+          path: ./build/arm64/${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-windows-arm64.zip
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Set Env
+        run: |
+          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "GIT_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ==============================
+      #   Download Artifacts
+      # ==============================
+
+      - name: Download Artifacts (Linux AMD64)
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-amd64
+          path: .
+
+      - name: Download Artifacts (Linux ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64
+          path: .
+
+      - name: Download Artifacts (MacOS AMD64)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-amd64
+          path: .
+
+      - name: Download Artifacts (MacOS ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64
+          path: .
+
+      - name: Download Artifacts (Windows AMD64)
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-amd64
+          path: .
+
+      - name: Download Artifacts (Windows ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-arm64
+          path: .
+
+      # ==============================
+      #   Create Release
+      # ==============================
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.RELEASE_VERSION}}
+          release_name: ${{ env.RELEASE_VERSION}}
+          body: |
+            "Created by Github Actions"
+          draft: true
+          prerelease: false
+          files: |
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-linux-amd64.tar.zst
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-linux-arm64.tar.zst
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-macos-amd64.tar.zst
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-macos-arm64.tar.zst
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-windows-amd64.zip
+            ./${{ env.BINARY_NAME }}-${{ env.GIT_TAG }}-windows-arm64.zip
