@@ -30,7 +30,7 @@ import (
 	"github.com/tforceaio/tf-unifiler/filesys"
 )
 
-var GOBIN, _ = filepath.Abs(".bin")
+var GOBIN, _ = filepath.Abs("./build/bin")
 
 func executablePath(name string, os string) string {
 	if os == "windows" {
