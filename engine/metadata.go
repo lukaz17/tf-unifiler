@@ -86,7 +86,7 @@ func (m *MetadataModule) Index(workspaceDir string, input string, archiveName st
 		Msg("Start indexing.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
-	fhResults, err := listAndHashFiles([]string{absInput}, algos, true)
+	fhResults, err := listAndHashFiles([]string{absInput}, algos, true, m.notifier)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func (m *MetadataModule) Index(workspaceDir string, input string, archiveName st
 		return err
 	}
 
-	return m.saveIResults(ctx, archiveName, update, hResults)
+	return m.saveIResults(ctx, archiveName, update, absInput, hResults)
 }
 
 // Compute hashes of inputs (files/folders) and refining their contents.
@@ -147,7 +147,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 		Msg("Start refining file system.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
-	fhResults, err := listAndHashFiles(inputs, algos, true)
+	fhResults, err := listAndHashFiles(inputs, algos, true, m.notifier)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string,
 		Msg("Start scanning files metadata.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
-	fhResults, err := listAndHashFiles(inputs, algos, true)
+	fhResults, err := listAndHashFiles(inputs, algos, true, m.notifier)
 	if err != nil {
 		return err
 	}
@@ -396,7 +396,7 @@ func (m *MetadataModule) logError(err error) {
 }
 
 // Save indexing results to metadata database along with their respective archives.
-func (m *MetadataModule) saveIResults(ctx *db.DbContext, archiveName string, update bool, hResults []*core.FileMultiHash) error {
+func (m *MetadataModule) saveIResults(ctx *db.DbContext, archiveName string, update bool, directory string, hResults []*core.FileMultiHash) error {
 	sessionID, err := uuid.NewV7()
 	if err != nil {
 		m.logger.Info().Msg("Failed to generate SessionID.")
@@ -433,6 +433,18 @@ func (m *MetadataModule) saveIResults(ctx *db.DbContext, archiveName string, upd
 	hashesMap := map[string]db.Bytes32{}
 	for _, hash := range hashes {
 		hashesMap[hash.Sha256] = hash.ID
+	}
+	// Save Mappings
+	mappings := make([]*db.Mapping, len(hResults))
+	for i, res := range hResults {
+		fileName := strfmt.NewFileNameFromStr(res.FileName)
+		mappings[i] = db.NewMapping(hashesMap[res.Sha256.HexStr()], directory, fileName.Name, fileName.Extension)
+		mappings[i].SessionID = sessionID
+	}
+	err = ctx.SaveMappings(mappings)
+	if err != nil {
+		m.logger.Info().Msg("Failed to save Mappings.")
+		return err
 	}
 	// Validate Archive name
 	existingArchive, err := ctx.GetArchiveByName(archiveName)

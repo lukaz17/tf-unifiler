@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/tforceaio/tf-unifiler/crypto/hasher"
+	"github.com/tforceaio/tf-unifiler/diag"
 	"github.com/tforceaio/tf-unifiler/filesys"
+	"github.com/tforceaio/tf-unifiler/tui"
 )
 
 // fileHashResult pairs a filesystem entry with its computed hashes.
@@ -33,10 +35,16 @@ type fileHashResult struct {
 }
 
 // List and hash for all files using the specified algorithms.
-func listAndHashFiles(inputs []string, algorithms []string, recursive bool) ([]*fileHashResult, error) {
+func listAndHashFiles(inputs []string, algorithms []string, recursive bool, notifier diag.Notifier) ([]*fileHashResult, error) {
 	contents, err := filesys.List(inputs, recursive)
 	if err != nil {
 		return nil, err
+	}
+
+	if n, ok := notifier.(*tui.BubbleteaNotifier); ok {
+		ps := tui.RunProcessStatus(n)
+		defer ps.Stop()
+		n.SetTotal(uint64(len(contents)))
 	}
 
 	var results []*fileHashResult

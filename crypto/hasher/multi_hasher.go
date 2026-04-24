@@ -87,7 +87,7 @@ func Hash(fPath string, algorithms []string) ([]*HashResult, error) {
 		}
 	}
 
-	p := diag.NewProgressTracker("HashFile", notifier)
+	p := diag.NewProgressTracker("Hash File", notifier)
 	defer p.Done()
 	p.Total(stat.Size())
 	p.Status(fPath)
@@ -162,7 +162,7 @@ func hashFile(fPath string, hasher hash.Hash, algo string) (*HashResult, error) 
 	}
 	defer fHandle.Close()
 
-	p := diag.NewProgressTracker("HashFile", notifier)
+	p := diag.NewProgressTracker("Hash File", notifier)
 	defer p.Done()
 	p.Total(stat.Size())
 	p.Status(fPath)

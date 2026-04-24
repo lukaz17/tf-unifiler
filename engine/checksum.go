@@ -56,7 +56,7 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 		Str("output", output).
 		Msg("Start computing hashes.")
 
-	fhResults, err := listAndHashFiles(inputs, algorithms, true)
+	fhResults, err := listAndHashFiles(inputs, algorithms, true, m.notifier)
 	if err != nil {
 		return err
 	}

@@ -60,7 +60,7 @@ func (m *FileModule) Hash(inputs []string) error {
 		Msg("Start hashing files.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
-	fhResults, err := listAndHashFiles(inputs, algos, true)
+	fhResults, err := listAndHashFiles(inputs, algos, true, m.notifier)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (m *FileModule) Rename(inputs []string, preset string) error {
 
 // Rename files using hashes of their contents.
 func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) error {
-	fhResults, err := listAndHashFiles(inputs, []string{algo}, false)
+	fhResults, err := listAndHashFiles(inputs, []string{algo}, false, m.notifier)
 	if err != nil {
 		return err
 	}

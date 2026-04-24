@@ -139,7 +139,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 		Msg("Start scanning files")
 
 	workspaceRoot := MirrorWorkspaceRoot(workspaceDir)
-	fhResults, err := listAndHashFiles(inputs, []string{"sha256"}, true)
+	fhResults, err := listAndHashFiles(inputs, []string{"sha256"}, true, m.notifier)
 	if err != nil {
 		return err
 	}
