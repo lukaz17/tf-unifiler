@@ -222,7 +222,7 @@ func MirrorCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			c := InitApp()
 			defer c.Close()
-			flags := ParseMirrorFlags(cmd)
+			flags := ParseMirrorFlags(cmd, []string{})
 			m := NewMirrorModule(c, "export")
 			m.logError(m.Export(flags.WorkspaceDir, flags.ChecksumFile, flags.Output))
 		},
@@ -237,7 +237,7 @@ func MirrorCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			c := InitApp()
 			defer c.Close()
-			flags := ParseMirrorFlags(cmd)
+			flags := ParseMirrorFlags(cmd, args)
 			m := NewMirrorModule(c, "export")
 			m.logError(m.Scan(flags.WorkspaceDir, flags.Inputs))
 		},
@@ -257,11 +257,12 @@ type MirrorFlags struct {
 }
 
 // Extract all flags from a Cobra Command.
-func ParseMirrorFlags(cmd *cobra.Command) *MirrorFlags {
+func ParseMirrorFlags(cmd *cobra.Command, args []string) *MirrorFlags {
 	checksumFile, _ := cmd.Flags().GetString("checksum")
 	inputs, _ := cmd.Flags().GetStringSlice("inputs")
 	output, _ := cmd.Flags().GetString("output")
 	workspaceDir, _ := cmd.Flags().GetString("workspace")
+	inputs = append(args, inputs...)
 
 	return &MirrorFlags{
 		ChecksumFile: checksumFile,

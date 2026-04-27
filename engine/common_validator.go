@@ -42,6 +42,17 @@ func validateInputs(inputs []string) error {
 	return nil
 }
 
+// Check that exactly 1 input is provided.
+func validateSingleInput(inputs []string) error {
+	if len(inputs) == 0 {
+		return errors.New("input is not set")
+	}
+	if len(inputs) > 1 {
+		return errors.New("only 1 input file is allowed")
+	}
+	return nil
+}
+
 // Check for not empty workspace and its existence on disk.
 func validateWorkspace(ws string) error {
 	if ws == "" {

@@ -228,9 +228,13 @@ func VideoCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			c := InitApp()
 			defer c.Close()
-			flags := ParseVideoFlags(cmd)
+			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "info")
-			m.logError(m.Info(flags.File))
+			if err := validateSingleInput(flags.Inputs); err != nil {
+				m.logError(err)
+				return
+			}
+			m.logError(m.Info(flags.Inputs[0]))
 		},
 	}
 	rootCmd.AddCommand(infoCmd)
@@ -241,9 +245,13 @@ func VideoCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			c := InitApp()
 			defer c.Close()
-			flags := ParseVideoFlags(cmd)
+			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "screenshot")
-			m.logError(m.ExtractFrames(flags.File, flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
+			if err := validateSingleInput(flags.Inputs); err != nil {
+				m.logError(err)
+				return
+			}
+			m.logError(m.ExtractFrames(flags.Inputs[0], flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
 		},
 	}
 	extractFramesCmd.Flags().IntP("quality", "q", 90, "Quality factor for screenshot in scale 1-100.")
@@ -255,7 +263,7 @@ func VideoCmd() *cobra.Command {
 
 // Struct VideoFlags contains all flags used by Video module.
 type VideoFlags struct {
-	File      string
+	Inputs    []string
 	Interval  float64
 	Limit     float64
 	Offset    float64
@@ -264,8 +272,12 @@ type VideoFlags struct {
 }
 
 // Extract all flags from a Cobra Command.
-func ParseVideoFlags(cmd *cobra.Command) *VideoFlags {
+func ParseVideoFlags(cmd *cobra.Command, args []string) *VideoFlags {
 	file, _ := cmd.Flags().GetString("file")
+	inputs := args
+	if file != "" {
+		inputs = append(inputs, file)
+	}
 	interval, _ := cmd.Flags().GetFloat64("interval")
 	limit, _ := cmd.Flags().GetFloat64("limit")
 	offset, _ := cmd.Flags().GetFloat64("offset")
@@ -273,7 +285,7 @@ func ParseVideoFlags(cmd *cobra.Command) *VideoFlags {
 	quality, _ := cmd.Flags().GetInt("quality")
 
 	return &VideoFlags{
-		File:      file,
+		Inputs:    inputs,
 		Interval:  interval,
 		Limit:     limit,
 		Offset:    offset,
