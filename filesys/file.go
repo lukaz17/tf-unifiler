@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tforce-io/tf-golib/opx"
 )
@@ -60,7 +61,7 @@ func CreateEntry(fPath string) (*FsEntry, error) {
 	}
 	entry := &FsEntry{
 		AbsolutePath: absolutePath,
-		RelativePath: NormalizePath(fPath),
+		RelativePath: NormalizePath(fPath, true),
 		Name:         fileInfo.Name(),
 		IsDir:        fileInfo.IsDir(),
 	}
@@ -68,7 +69,7 @@ func CreateEntry(fPath string) (*FsEntry, error) {
 }
 
 func CreateHardlink(sPath, tPath string) error {
-	ntPath := NormalizePath(tPath)
+	ntPath := NormalizePath(tPath, true)
 	parent, _ := filepath.Split(ntPath)
 	if !IsExist(parent) {
 		err := os.MkdirAll(parent, 0775)
@@ -140,8 +141,19 @@ func List(fPaths []string, recursive bool) (FsEntries, error) {
 	return contents, nil
 }
 
-func NormalizePath(fPath string) string {
-	return filepath.FromSlash(fPath) // use OS-native path separator
+func NormalizePath(fPath string, alwaysForwardSlash bool) string {
+	if alwaysForwardSlash {
+		return strings.ReplaceAll(fPath, "\\", "/")
+	}
+	return filepath.FromSlash(fPath)
+}
+
+func NormalizePaths(fPaths []string, alwaysForwardSlash bool) []string {
+	normalized := make([]string, len(fPaths))
+	for i, p := range fPaths {
+		normalized[i] = NormalizePath(p, alwaysForwardSlash)
+	}
+	return normalized
 }
 
 func WriteLines(fPath string, lines []string) error {

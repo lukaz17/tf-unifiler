@@ -60,9 +60,9 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 		return err
 	}
 	m.logger.Info().
-		Str("cache", workspaceDir).
-		Str("checksum", checksumFile).
-		Str("root", targetDir).
+		Str("cache", filesys.NormalizePath(workspaceDir, true)).
+		Str("checksum", filesys.NormalizePath(checksumFile, true)).
+		Str("root", filesys.NormalizePath(targetDir, true)).
 		Msgf("Start exporting files structure.")
 
 	workspaceRoot := MirrorWorkspaceRoot(workspaceDir)
@@ -109,15 +109,15 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 		err := filesys.CreateHardlink(cachePath, targetPath)
 		if err != nil {
 			m.logger.Info().
-				Str("src", cachePath).
-				Str("dest", targetPath).
+				Str("src", filesys.NormalizePath(cachePath, true)).
+				Str("dest", filesys.NormalizePath(targetPath, true)).
 				Msg("Failed to create hardlink.")
 			return err
 		} else {
 			m.logger.Info().
 				Str("hash", l.Hash).
-				Str("src", cachePath).
-				Str("dest", targetPath).
+				Str("src", filesys.NormalizePath(cachePath, true)).
+				Str("dest", filesys.NormalizePath(targetPath, true)).
 				Msg("Exported file.")
 		}
 	}
@@ -134,8 +134,8 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 		return err
 	}
 	m.logger.Info().
-		Str("cache", workspaceDir).
-		Strs("inputs", inputs).
+		Str("cache", filesys.NormalizePath(workspaceDir, true)).
+		Strs("inputs", filesys.NormalizePaths(inputs, true)).
 		Msg("Start scanning files")
 
 	workspaceRoot := MirrorWorkspaceRoot(workspaceDir)
@@ -147,7 +147,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	for _, r := range fhResults {
 		m.logger.Info().
 			Str("algo", "sha256").
-			Str("path", r.Entry.RelativePath).
+			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Int("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
@@ -165,21 +165,21 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 		cachePath := path.Join(workspaceRoot, name)
 		if filesys.IsFileExist(cachePath) {
 			m.logger.Info().
-				Str("src", r.Entry.AbsolutePath).
-				Str("cache", cachePath).
+				Str("src", filesys.NormalizePath(r.Entry.AbsolutePath, true)).
+				Str("cache", filesys.NormalizePath(cachePath, true)).
 				Msg("Skipped. File is already cached.")
 		} else {
 			err := filesys.CreateHardlink(r.Entry.AbsolutePath, cachePath)
 			if err != nil {
 				m.logger.Info().
-					Str("src", r.Entry.AbsolutePath).
-					Str("dest", cachePath).
+					Str("src", filesys.NormalizePath(r.Entry.AbsolutePath, true)).
+					Str("dest", filesys.NormalizePath(cachePath, true)).
 					Msg("Failed to create hardlink.")
 				return err
 			}
 			m.logger.Info().
-				Str("src", r.Entry.AbsolutePath).
-				Str("target", cachePath).
+				Str("src", filesys.NormalizePath(r.Entry.AbsolutePath, true)).
+				Str("target", filesys.NormalizePath(cachePath, true)).
 				Msg("Created cache file.")
 		}
 	}
@@ -187,12 +187,12 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	rollbackFilePath, err := writeJSON(workspaceRoot, "mirror-", mappings)
 	if err != nil {
 		m.logger.Info().
-			Str("path", rollbackFilePath).
+			Str("path", filesys.NormalizePath(rollbackFilePath, true)).
 			Msg("Failed to write rollback file.")
 		return err
 	}
 	m.logger.Info().
-		Str("path", rollbackFilePath).
+		Str("path", filesys.NormalizePath(rollbackFilePath, true)).
 		Msg("Written rollback file.")
 
 	return nil

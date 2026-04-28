@@ -65,7 +65,7 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 		home := os.Getenv("HOME")
 		configFile = path.Join(home, ".config", "unifiler", "unifiler.yml")
 	} else if runtime.GOOS == "windows" {
-		appData := filesys.NormalizePath(os.Getenv("APPDATA"))
+		appData := os.Getenv("APPDATA")
 		configFile = path.Join(appData, "Unifiler", "unifiler.yml")
 	}
 	var err error

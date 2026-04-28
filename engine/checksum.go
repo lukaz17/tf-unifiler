@@ -52,8 +52,8 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 
 	m.logger.Info().
 		Strs("algos", algorithms).
-		Strs("files", inputs).
-		Str("output", output).
+		Strs("files", filesys.NormalizePaths(inputs, true)).
+		Str("output", filesys.NormalizePath(output, true)).
 		Msg("Start computing hashes.")
 
 	fhResults, err := listAndHashFiles(inputs, algorithms, true, m.notifier)
@@ -64,7 +64,7 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 	for _, r := range fhResults {
 		m.logger.Info().
 			Strs("algos", algorithms).
-			Str("file", r.Entry.RelativePath).
+			Str("file", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Int("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
@@ -86,7 +86,7 @@ func (m *ChecksumModule) Create(inputs []string, output string, algorithms []str
 		}
 		m.logger.Info().
 			Int("lineCount", len(fContents)).
-			Str("path", oPath).
+			Str("path", filesys.NormalizePath(oPath, true)).
 			Msg("Written checksum file.")
 	}
 	return nil

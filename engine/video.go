@@ -57,7 +57,7 @@ func (m *VideoModule) Info(file string) error {
 		return err
 	}
 	m.logger.Info().
-		Str("input", file).
+		Str("input", filesys.NormalizePath(file, true)).
 		Msg("Start analyzing file information.")
 
 	inputFile, _ := filesys.GetAbsPath(file)
@@ -74,11 +74,11 @@ func (m *VideoModule) Info(file string) error {
 	}
 
 	m.logger.Info().
-		Str("path", inputFile).
+		Str("path", filesys.NormalizePath(inputFile, true)).
 		Msg("Analyzed video file.")
 	fmt.Println(stdout)
 	m.logger.Info().
-		Str("path", miFile).
+		Str("path", filesys.NormalizePath(miFile, true)).
 		Msg("Saved video info.")
 
 	return nil
@@ -100,9 +100,9 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 		m.logger.Warn().Msg("Quality is not specified, default value will be used.")
 	}
 	m.logger.Info().
-		Str("file", file).
+		Str("file", filesys.NormalizePath(file, true)).
 		Floats64("interval/offset/limit", []float64{interval, offset, limit}).
-		Str("output", outputDir).
+		Str("output", filesys.NormalizePath(outputDir, true)).
 		Msg("Extracting frames for video file.")
 
 	inputFile, _ := filesys.CreateEntry(file)
@@ -117,8 +117,8 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 	}
 	m.logger.Info().
 		Uint64("count", count).
-		Str("file", file).
-		Str("output", outputDir).
+		Str("file", filesys.NormalizePath(file, true)).
+		Str("output", filesys.NormalizePath(outputDir, true)).
 		Msg("Extracted frames for video file.")
 	return nil
 }

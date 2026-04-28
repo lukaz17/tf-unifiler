@@ -56,7 +56,7 @@ func (m *FileModule) Hash(inputs []string) error {
 		return err
 	}
 	m.logger.Info().
-		Strs("files", inputs).
+		Strs("files", filesys.NormalizePaths(inputs, true)).
 		Msg("Start hashing files.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
@@ -69,7 +69,7 @@ func (m *FileModule) Hash(inputs []string) error {
 		m.logger.Info().
 			Str("crc32", hex.EncodeToString(r.Hashes[0].Hash)).
 			Str("md5", hex.EncodeToString(r.Hashes[1].Hash)).
-			Str("path", r.Entry.RelativePath).
+			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Str("sha1", hex.EncodeToString(r.Hashes[2].Hash)).
 			Str("sha256", hex.EncodeToString(r.Hashes[3].Hash)).
 			Str("sha512", hex.EncodeToString(r.Hashes[4].Hash)).
@@ -86,7 +86,7 @@ func (m *FileModule) Rename(inputs []string, preset string) error {
 		return err
 	}
 	m.logger.Info().
-		Strs("inputs", inputs).
+		Strs("inputs", filesys.NormalizePaths(inputs, true)).
 		Str("preset", preset).
 		Msg("Start renaming file.")
 
@@ -122,7 +122,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 	for _, r := range fhResults {
 		m.logger.Info().
 			Str("algo", algo).
-			Str("path", r.Entry.RelativePath).
+			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Int("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
@@ -143,26 +143,26 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 	rollbackFilePath, err := writeJSON(".", "unifiler-file-rename-", mappings)
 	if err != nil {
 		m.logger.Info().
-			Str("path", rollbackFilePath).
+			Str("path", filesys.NormalizePath(rollbackFilePath, true)).
 			Msg("Failed to write rollback file.")
 		return err
 	}
 	m.logger.Info().
-		Str("path", rollbackFilePath).
+		Str("path", filesys.NormalizePath(rollbackFilePath, true)).
 		Msg("Written rollback file.")
 
 	for _, e := range mappings {
 		if e.Source == e.Target {
 			m.logger.Info().
-				Str("src", e.Source).
-				Str("dest", e.Target).
+				Str("src", filesys.NormalizePath(e.Source, true)).
+				Str("dest", filesys.NormalizePath(e.Target, true)).
 				Msg("Skipped. File is already renamed.")
 			continue
 		}
 		if filesys.IsFileExist(e.Target) {
 			m.logger.Info().
-				Str("src", e.Source).
-				Str("dest", e.Target).
+				Str("src", filesys.NormalizePath(e.Source, true)).
+				Str("dest", filesys.NormalizePath(e.Target, true)).
 				Msg("Skipped. Target file is existed.")
 			continue
 		}
@@ -170,14 +170,14 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		if err != nil {
 			m.logger.Err(err)
 			m.logger.Info().
-				Str("src", e.Source).
-				Str("dest", e.Target).
+				Str("src", filesys.NormalizePath(e.Source, true)).
+				Str("dest", filesys.NormalizePath(e.Target, true)).
 				Msg("Failed to rename file.")
 			continue
 		}
 		m.logger.Info().
-			Str("src", e.Source).
-			Str("target", e.Target).
+			Str("src", filesys.NormalizePath(e.Source, true)).
+			Str("target", filesys.NormalizePath(e.Target, true)).
 			Msg("Renamed file.")
 	}
 

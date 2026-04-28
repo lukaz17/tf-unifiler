@@ -82,9 +82,9 @@ func (m *MetadataModule) Index(workspaceDir string, input string, archiveName st
 	}
 
 	m.logger.Info().
-		Str("input", absInput).
+		Str("input", filesys.NormalizePath(absInput, true)).
 		Str("name", archiveName).
-		Str("workspace", workspaceDir).
+		Str("workspace", filesys.NormalizePath(workspaceDir, true)).
 		Msg("Start indexing.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
@@ -103,7 +103,7 @@ func (m *MetadataModule) Index(workspaceDir string, input string, archiveName st
 		}
 		m.logger.Info().
 			Strs("algos", algos).
-			Str("path", relPath).
+			Str("path", filesys.NormalizePath(relPath, true)).
 			Int("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 		fileMultiHash := &core.FileMultiHash{
@@ -142,10 +142,10 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 	m.logger.Info().
 		Strs("collections", collections).
 		Bool("erase", erase).
-		Strs("files", inputs).
+		Strs("files", filesys.NormalizePaths(inputs, true)).
 		Bool("invert", invert).
 		Bool("onlyObsoleted", onlyObsoleted).
-		Str("workspace", workspaceDir).
+		Str("workspace", filesys.NormalizePath(workspaceDir, true)).
 		Msg("Start refining file system.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
@@ -165,7 +165,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 		m.logger.Info().
 			Str("crc32", hex.EncodeToString(r.Hashes[0].Hash)).
 			Str("md5", hex.EncodeToString(r.Hashes[1].Hash)).
-			Str("path", r.Entry.RelativePath).
+			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Str("sha1", hex.EncodeToString(r.Hashes[2].Hash)).
 			Str("sha256", sha256).
 			Int("size", r.Hashes[0].Size).
@@ -193,12 +193,12 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 			}
 			if erase {
 				m.logger.Info().
-					Str("path", r.Entry.RelativePath).
+					Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 					Msg("Deleted file.")
 			} else {
 				m.logger.Info().
-					Str("src", r.Entry.RelativePath).
-					Str("dest", newFile.FullPath()).
+					Str("src", filesys.NormalizePath(r.Entry.RelativePath, true)).
+					Str("dest", filesys.NormalizePath(newFile.FullPath(), true)).
 					Msg("Moved file.")
 			}
 		}
@@ -234,8 +234,8 @@ func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string,
 	m.logger.Info().
 		Strs("collections", collections).
 		Bool("delete", delete).
-		Strs("files", inputs).
-		Str("workspace", workspaceDir).
+		Strs("files", filesys.NormalizePaths(inputs, true)).
+		Str("workspace", filesys.NormalizePath(workspaceDir, true)).
 		Msg("Start scanning files metadata.")
 
 	algos := []string{"crc32", "md5", "sha1", "sha256", "sha512"}
@@ -248,7 +248,7 @@ func (m *MetadataModule) Scan(workspaceDir string, inputs, collections []string,
 	for _, r := range fhResults {
 		m.logger.Info().
 			Strs("algos", algos).
-			Str("path", r.Entry.RelativePath).
+			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Int("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 		fileMultiHash := &core.FileMultiHash{
