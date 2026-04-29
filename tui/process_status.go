@@ -34,14 +34,6 @@ const (
 	maxErrorLines = 3
 )
 
-var (
-	styleAction  = lipgloss.NewStyle().Bold(true)
-	styleItem    = lipgloss.NewStyle().Bold(true)
-	styleLabel   = lipgloss.NewStyle().Bold(true)
-	styleError   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	styleWarning = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-)
-
 // ProcessStatusMsg is used for updating state of ProcessStatus component.
 type ProcessStatusMsg struct {
 	action         string
@@ -54,6 +46,8 @@ type ProcessStatusMsg struct {
 
 // ProcessStatus is the Bubble Tea component that renders the 4-line progress UI.
 type ProcessStatus struct {
+	allowInterrupt bool
+
 	action         string
 	item           string
 	itemPercent    float64
@@ -100,6 +94,12 @@ func NewProcessStatus() *ProcessStatus {
 	}
 }
 
+// Allow the ProcessStatus to signal the program to exit immediately.
+func (m *ProcessStatus) WithAllowInterrupt(allow bool) *ProcessStatus {
+	m.allowInterrupt = allow
+	return m
+}
+
 // Display the ProcessStatus to the terminal.
 func (m *ProcessStatus) Run(notifier *BubbleteaNotifier) *TeaProgramHandle {
 	p := tea.NewProgram(m)
@@ -132,7 +132,7 @@ func (m ProcessStatus) Init() tea.Cmd {
 func (m ProcessStatus) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+c" || msg.String() == "esc" {
+		if msg.String() == "ctrl+c" || (msg.String() == "esc" && m.allowInterrupt) {
 			return m, tea.Interrupt
 		}
 
@@ -195,6 +195,11 @@ func (m ProcessStatus) View() tea.View {
 			sb.WriteString(styleError.Render(e))
 		}
 		sb.WriteString("\n")
+	}
+	if m.allowInterrupt {
+		sb.WriteString(fmt.Sprintf("\n%s interrupt  \n",
+			styleShortcut.Render(" esc "),
+		))
 	}
 
 	return tea.NewView(sb.String())
