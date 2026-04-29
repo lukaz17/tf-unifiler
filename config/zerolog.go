@@ -26,13 +26,15 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/filesys"
+	"github.com/tforceaio/tf-unifiler/tui"
 )
 
 // Entrypoint for creating a ZeroLog logger instance.
 func InitZerolog(configDir string, useFS bool) (zerolog.Logger, *os.File, error) {
+	colorSupported := tui.IsTTY()
 	consoleWriter := &zerolog.FilteredLevelWriter{
 		Writer: zerolog.LevelWriterAdapter{
-			Writer: zerolog.ConsoleWriter{Out: os.Stdout, NoColor: true, TimeFormat: time.DateTime},
+			Writer: zerolog.ConsoleWriter{Out: os.Stdout, NoColor: !colorSupported, TimeFormat: time.DateTime},
 		},
 		Level: zerolog.TraceLevel,
 	}
