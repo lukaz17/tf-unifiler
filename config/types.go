@@ -22,6 +22,12 @@ type RootConfig struct {
 	IsPortable bool          `koanf:"-"`
 	Logger     *LoggerConfig `koanf:"log"`
 	Path       *PathConfig   `koanf:"paths"`
+	Server     *ServerConfig `koanf:"server"`
+}
+
+// HTTPConfig contains configurations for HTTP server connection.
+type HTTPConfig struct {
+	Port int `koanf:"port"`
 }
 
 // LoggerConfig contains configurations for logging.
@@ -38,4 +44,9 @@ type PathConfig struct {
 	X7zPath         string `koanf:"x7z"`
 	X264Path        string `koanf:"x264"`
 	X265Path        string `koanf:"x265"`
+}
+
+// ServerConfig contains configurations for HTTP server.
+type ServerConfig struct {
+	HTTP *HTTPConfig `koanf:"http"`
 }

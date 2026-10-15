@@ -82,6 +82,11 @@ func DefaultConfig() *koanf.Koanf {
 				X264Path:        "x264",
 				X265Path:        "x265",
 			},
+			Server: &ServerConfig{
+				HTTP: &HTTPConfig{
+					Port: 8080,
+				},
+			},
 		}, "koanf"),
 		nil,
 	)
