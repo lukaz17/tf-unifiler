@@ -51,8 +51,9 @@ func (m *ServeModule) Start() error {
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *ServeModule) logError(err error) {
+func (m *ServeModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Define Cobra Command for Serve module.
@@ -60,11 +61,11 @@ func ServeCmd() *cobra.Command {
 	serveCmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start HTTP server.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			m := NewServeModule(c)
-			m.logError(m.Start())
+			return m.logError(m.Start())
 		},
 	}
 	return serveCmd

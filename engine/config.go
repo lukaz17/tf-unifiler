@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -124,10 +123,11 @@ func (m *ConfigModule) Set(key, value string) error {
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *ConfigModule) logError(err error) {
+func (m *ConfigModule) logError(err error) error {
 	if err != nil {
 		m.logger.Err(err).Msg("Unexpected error has occurred.")
 	}
+	return err
 }
 
 // Write data to a file safely.
@@ -156,12 +156,12 @@ func ConfigCmd() *cobra.Command {
 	exportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export active configuration to stdout or file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
-			m.logError(m.Export(f.Output, f.Diff))
+			return m.logError(m.Export(f.Output, f.Diff))
 		},
 	}
 	exportCmd.Flags().BoolP("diff", "d", false, "Export diffrences from default configuration only.")
@@ -170,12 +170,12 @@ func ConfigCmd() *cobra.Command {
 	getCmd := &cobra.Command{
 		Use:   "get [key]",
 		Short: "Get the active value of a configuration key.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := NewController(true)
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
-			m.logError(m.Get(f.Key))
+			return m.logError(m.Get(f.Key))
 		},
 	}
 	getCmd.Flags().StringP("key", "k", "", "Configuration key in dot-delimited format.")
@@ -183,12 +183,12 @@ func ConfigCmd() *cobra.Command {
 	setCmd := &cobra.Command{
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value in the active YAML file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := NewController(true)
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
-			m.logError(m.Set(f.Key, f.Value))
+			return m.logError(m.Set(f.Key, f.Value))
 		},
 	}
 	setCmd.Flags().StringP("key", "k", "", "Configuration key in dot-delimited format.")

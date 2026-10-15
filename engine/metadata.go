@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -366,8 +365,9 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *MetadataModule) logError(err error) {
+func (m *MetadataModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Save hashing results to metadata database along with their respective collections.
@@ -510,12 +510,12 @@ func MetadataCmd() *cobra.Command {
 	indexCmd := &cobra.Command{
 		Use:   "index <input>...",
 		Short: "Scan inputs for file metadata.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, args)
 			m := NewMetadataModule(c, "scan")
-			m.logError(m.Index(flags.WorkspaceDir, flags.Inputs, flags.Collections, flags.Deleted, flags.Name, false))
+			return m.logError(m.Index(flags.WorkspaceDir, flags.Inputs, flags.Collections, flags.Deleted, flags.Name, false))
 		},
 	}
 	indexCmd.Flags().StringSliceP("collections", "c", []string{}, "Names of collections of known files, comma-separated list supported. If a collection existed, files will be appended to that collection.")
@@ -528,12 +528,12 @@ func MetadataCmd() *cobra.Command {
 	refineCmd := &cobra.Command{
 		Use:   "refine <input>...",
 		Short: "Refine inputs against metadata database.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, args)
 			m := NewMetadataModule(c, "scan")
-			m.logError(m.Refine(flags.WorkspaceDir, flags.Inputs, flags.Collections, flags.OnlyObsoleted, flags.Invert, flags.Erase))
+			return m.logError(m.Refine(flags.WorkspaceDir, flags.Inputs, flags.Collections, flags.OnlyObsoleted, flags.Invert, flags.Erase))
 		},
 	}
 	refineCmd.Flags().StringSliceP("collections", "c", []string{}, "Names of collections of known files, comma-separated list supported.")
@@ -557,12 +557,12 @@ func metadataQueryCmd() *cobra.Command {
 	hashCmd := &cobra.Command{
 		Use:   "hash",
 		Short: "Query hash information.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_hash")
-			m.logError(m.QueryHash(flags.WorkspaceDir, flags.Collections, flags.Hashes, flags.OnlyObsoleted))
+			return m.logError(m.QueryHash(flags.WorkspaceDir, flags.Collections, flags.Hashes, flags.OnlyObsoleted))
 		},
 	}
 	hashCmd.Flags().StringSliceP("collections", "c", []string{}, "Names of collections of known files, comma-separated list supported.")
@@ -573,12 +573,12 @@ func metadataQueryCmd() *cobra.Command {
 	sessionCmd := &cobra.Command{
 		Use:   "session",
 		Short: "Query session information.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_session")
-			m.logError(m.QuerySession(flags.WorkspaceDir, flags.ID))
+			return m.logError(m.QuerySession(flags.WorkspaceDir, flags.ID))
 		},
 	}
 	sessionCmd.Flags().StringP("id", "i", "", "Session ID.")
@@ -587,12 +587,12 @@ func metadataQueryCmd() *cobra.Command {
 	setCmd := &cobra.Command{
 		Use:   "set",
 		Short: "Query collection information.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_set")
-			m.logError(m.QuerySet(flags.WorkspaceDir, flags.Name))
+			return m.logError(m.QuerySet(flags.WorkspaceDir, flags.Name))
 		},
 	}
 	setCmd.Flags().StringP("name", "n", "", "Collection name.")
