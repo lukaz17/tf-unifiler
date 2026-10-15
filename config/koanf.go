@@ -47,10 +47,10 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 		configFile = filepath.Join(filepath.Dir(exec), configFileName)
 	} else if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		home := os.Getenv("HOME")
-		configFile = filepath.Join(home, ".config", "unifiler", configFileName)
+		configFile = filepath.Join(home, ".config", "tfunifiler", configFileName)
 	} else if runtime.GOOS == "windows" {
 		appData := os.Getenv("APPDATA")
-		configFile = filepath.Join(appData, "Unifiler", configFileName)
+		configFile = filepath.Join(appData, "TFunifiler", configFileName)
 	}
 
 	var err error
