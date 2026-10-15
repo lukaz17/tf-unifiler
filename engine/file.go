@@ -51,7 +51,7 @@ type FileModule struct {
 // Return new FileModule.
 func NewFileModule(c *Controller, cmdName string) *FileModule {
 	return &FileModule{
-		cfg:      c.Root,
+		cfg:      c.Config,
 		notifier: c.Notifier,
 		logger:   c.CommandLogger("file", cmdName),
 	}

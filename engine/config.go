@@ -40,7 +40,7 @@ type ConfigModule struct {
 // Return new ConfigModule instance.
 func NewConfigModule(c *Controller) *ConfigModule {
 	return &ConfigModule{
-		cfg:    c.Root,
+		cfg:    c.Config,
 		logger: c.ModuleLogger("config"),
 	}
 }

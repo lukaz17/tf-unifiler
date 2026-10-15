@@ -20,6 +20,7 @@ require (
 	github.com/tforce-io/tf-golib-extra/tftea-v2 v0.2.0
 	golang.org/x/crypto v0.26.0
 	golang.org/x/sys v0.43.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gorm.io/gorm v1.25.12
 )
 

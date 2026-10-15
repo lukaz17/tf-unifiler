@@ -45,7 +45,7 @@ type VideoModule struct {
 // Return new VideoModule.
 func NewVideoModule(c *Controller, cmdName string) *VideoModule {
 	return &VideoModule{
-		cfg:      c.Root,
+		cfg:      c.Config,
 		logger:   c.CommandLogger("video", cmdName),
 		notifier: c.Notifier,
 	}

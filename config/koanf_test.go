@@ -1,31 +1,60 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/tforceaio/tf-unifiler/filesys"
 )
 
-func TestFileConfig(t *testing.T) {
-	prepareTests()
+func TestDefaultConfig(t *testing.T) {
+	cfg, err := buildConfig(true, filepath.Join(t.TempDir(), "unifiler.yaml"))
+	if err != nil {
+		t.Error("Error get default config", err)
+	}
+	if cfg.Logger.Level != "info" {
+		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "info", cfg.Logger.Level)
+	}
+	if cfg.Path.FFMpegPath != "ffmpeg" {
+		t.Errorf("Wrong FFMpegPath. Expected '%s' Actual '%s'", "ffmpeg", cfg.Path.FFMpegPath)
+	}
+	if cfg.Path.ImageMagickPath != "magick" {
+		t.Errorf("Wrong ImageMagickPath. Expected '%s' Actual '%s'", "magick", cfg.Path.ImageMagickPath)
+	}
+}
 
-	cfg, err := buildConfig(true, "../../.tests/config/unifiler.yml")
+func TestFileConfig(t *testing.T) {
+	contents := []string{
+		"paths:",
+		"  ffmpeg: /usr/bin/ffmpeg",
+		"  imagemagick: magick",
+		"  mediainfo: /opt/mediainfo/bin/mediainfo",
+		"  x264: x264",
+		"  x265: /usr/bin/x265",
+		"log:",
+		"  level: debug",
+	}
+	f := filepath.Join(t.TempDir(), "unifiler.yaml")
+	if err := os.WriteFile(f, []byte(strings.Join(contents, "\n")), 0664); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := buildConfig(true, f)
 	if err != nil {
 		t.Error("Error get config from file", err)
 	}
@@ -44,20 +73,18 @@ func TestFileConfig(t *testing.T) {
 	if cfg.Path.X265Path != "/usr/bin/x265" {
 		t.Errorf("Wrong X265Path. Expected '%s' Actual '%s'", "/usr/bin/x265", cfg.Path.X265Path)
 	}
+	if cfg.Logger.Level != "debug" {
+		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "debug", cfg.Logger.Level)
+	}
 }
 
-func prepareTests() {
-	contents := []string{
-		"paths:",
-		"  ffmpeg: /usr/bin/ffmpeg",
-		"  mediainfo: /opt/mediainfo/bin/mediainfo",
-		"  x265: /usr/bin/x265",
+func TestEnvConfig(t *testing.T) {
+	t.Setenv("TFUNIFILER_LOG_LEVEL", "warn")
+	cfg, err := buildConfig(true, filepath.Join(t.TempDir(), "unifiler.yaml"))
+	if err != nil {
+		t.Error("Error get config from env", err)
 	}
-
-	if !filesys.IsExist("../../.tests/config") {
-		filesys.CreateDirectoryRecursive("../../.tests/config")
-	}
-	if !filesys.IsExist("../../.tests/config/unifiler.yml") {
-		filesys.WriteLines("../../.tests/config/unifiler.yml", contents)
+	if cfg.Logger.Level != "warn" {
+		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "warn", cfg.Logger.Level)
 	}
 }

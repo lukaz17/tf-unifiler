@@ -60,7 +60,7 @@ func version() string {
 // Initialize configurations, loggings for internal modules, and display basic
 // information about this invocation.
 func InitApp() *Controller {
-	cfg := NewController(true)
+	ctrl := NewController(true)
 
 	pwd, _ := os.Getwd()
 	pwd, _ = filesys.GetAbsPath(pwd)
@@ -72,14 +72,14 @@ func InitApp() *Controller {
 	buildDate := opx.Ternary(gitDate == "", time.Now().UTC(), gitDate2)
 	fmt.Printf("Copyright (C) %d T-Force I/O\n", buildDate.Year())
 	fmt.Printf("Licensed under GPL-3.0 license. See COPYING file along with this program for more details.\n\n")
-	cfg.Logger.Info().Msg("-----------------")
-	cfg.Logger.Info().Msgf("Working directory %s", pwd)
-	cfg.Logger.Info().Msgf("Config directory %s", cfg.Root.ConfigDir)
-	cfg.Logger.Info().Msgf("Executable file %s", exec)
-	cfg.Logger.Info().Msgf("Portable mode %t", cfg.Root.IsPortable)
-	cfg.Logger.Info().Msg("-----------------")
+	ctrl.Logger.Info().Msg("-----------------")
+	ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
+	ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.IsPortable)
+	ctrl.Logger.Info().Msg("-----------------")
 
-	return cfg
+	return ctrl
 }
 
 // Execute the program.
