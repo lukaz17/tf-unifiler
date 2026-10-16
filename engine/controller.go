@@ -26,12 +26,16 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// Controller is the entrypoint for working with application configurations and
-// loggings.
+// Controller is the entrypoint for working with application configurations
+// and loggings.
 type Controller struct {
 	Config   *config.RootConfig
 	Logger   zerolog.Logger
 	Notifier diag.Notifier
+
+	// Interactive indicates that the current invocation is attached to a
+	// terminal and interactive TUI flows are allowed.
+	Interactive bool
 
 	logFile *lumberjack.Logger
 }
@@ -47,18 +51,20 @@ func NewController(useFS bool) *Controller {
 	if err2 != nil {
 		logger.Err(err2).Msg("error initializing log file")
 	}
+	interactive := tui.IsTTY() && !execViaQueue
 	var notifier diag.Notifier
-	if tui.IsTTY() {
+	if interactive {
 		notifier = tui.NewBubbleteaNotifier()
 		hasher.SetNotify(notifier)
 		filesys.SetNotify(notifier)
 		exec.SetNotify(notifier)
 	}
 	return &Controller{
-		Config:   cfg,
-		Logger:   logger,
-		Notifier: notifier,
-		logFile:  logFile,
+		Config:      cfg,
+		Logger:      logger,
+		Notifier:    notifier,
+		Interactive: interactive,
+		logFile:     logFile,
 	}
 }
 

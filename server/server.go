@@ -24,13 +24,20 @@ import (
 
 // Server is a thin wrapper around http.Server with pre-registered routes.
 type Server struct {
-	engine *gin.Engine
-	http   *http.Server
+	engine     *gin.Engine
+	http       *http.Server
+	dispatcher Dispatcher
 }
 
+// Option configures optional Server features.
+type Option func(*Server)
+
 // Entrypoint for creating a new Server listening on addr.
-func New(addr string) *Server {
+func New(addr string, opts ...Option) *Server {
 	s := &Server{}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.engine = s.router()
 	s.http = &http.Server{
 		Addr:    addr,
@@ -69,5 +76,11 @@ func (s *Server) router() *gin.Engine {
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
+	if s.dispatcher != nil {
+		r.POST("/jobs", s.handleEnqueue)
+		r.GET("/jobs", s.handleListJobs)
+		r.GET("/jobs/:id", s.handleGetJob)
+		r.DELETE("/jobs/:id", s.handleCancelJob)
+	}
 	return r
 }

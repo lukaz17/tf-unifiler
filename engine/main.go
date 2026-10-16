@@ -60,6 +60,9 @@ func version() string {
 // information about this invocation.
 func InitApp() *Controller {
 	ctrl := NewController(true)
+	if execViaQueue {
+		return ctrl
+	}
 
 	pwd, _ := os.Getwd()
 	pwd, _ = filesys.GetAbsPath(pwd)
@@ -83,9 +86,19 @@ func InitApp() *Controller {
 
 // Execute the program.
 func Execute() {
+	rootCmd := newRootCmd()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+// Build the root command with all registered subcommands. Callers which
+// execute commands programmatically must create a fresh instance per
+// invocation to avoid leaking parsed flag states across executions.
+func newRootCmd() *cobra.Command {
 	gitDate2, _ := time.Parse("20060102", gitDate)
 	buildDate := opx.Ternary(gitDate == "", time.Now().UTC(), gitDate2)
-
 	rootCmd := &cobra.Command{
 		Use: "unifiler",
 		Long: fmt.Sprintf(
@@ -104,9 +117,5 @@ Licensed under GPL-3.0 license. See COPYING file along with this program for mor
 	rootCmd.AddCommand(MirrorCmd())
 	rootCmd.AddCommand(ServeCmd())
 	rootCmd.AddCommand(VideoCmd())
-
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	return rootCmd
 }

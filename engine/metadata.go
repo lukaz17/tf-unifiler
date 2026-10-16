@@ -39,15 +39,17 @@ import (
 
 // MetadataModule handles user requests related to centralized file metadata.
 type MetadataModule struct {
-	logger   zerolog.Logger
-	notifier diag.Notifier
+	logger        zerolog.Logger
+	notifier      diag.Notifier
+	isInteractive bool
 }
 
 // Return new MetadataModule.
 func NewMetadataModule(c *Controller, cmdName string) *MetadataModule {
 	return &MetadataModule{
-		logger:   c.CommandLogger("metadata", cmdName),
-		notifier: c.Notifier,
+		logger:        c.CommandLogger("metadata", cmdName),
+		notifier:      c.Notifier,
+		isInteractive: c.Interactive,
 	}
 }
 
@@ -94,6 +96,9 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 		}
 	} else {
 		if len(collections) == 0 {
+			if !m.isInteractive {
+				return errors.New("collections is empty")
+			}
 			input, err := tftea.NewPrompt().
 				WithLabel("Enter collections name (comma separated):").
 				Run()

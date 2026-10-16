@@ -17,17 +17,20 @@ package engine
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
+	"github.com/tforceaio/tf-unifiler/internal/cmdqueue"
 	"github.com/tforceaio/tf-unifiler/server"
 )
 
-// ServeModule handles serving the HTTP server.
+// ServeModule handles serving the HTTP server with internal command queue.
 type ServeModule struct {
 	cfg     *config.RootConfig
 	httpSrv *server.Server
+	queue   *cmdqueue.Queue
 	logger  zerolog.Logger
 }
 
@@ -39,14 +42,21 @@ func NewServeModule(c *Controller) *ServeModule {
 	}
 }
 
-// Start listen for HTTP requests. Blocks until the server is stopped.
+// Start listen for HTTP requests and consume queued commands. Blocks until
+// the server is stopped.
 func (m *ServeModule) Start() error {
 	addr := fmt.Sprintf(":%d", m.cfg.Server.HTTP.Port)
 	m.logger.Info().
 		Str("addr", addr).
 		Msg("Start listening for HTTP requests.")
-	m.httpSrv = server.New(addr)
-	defer m.httpSrv.Close()
+	m.queue = cmdqueue.New(queuedRunner{})
+	m.httpSrv = server.New(addr, server.WithDispatcher(&queueDispatcher{queue: m.queue}))
+	go m.queue.Run()
+	defer func() {
+		m.queue.Stop()
+		m.queue.Wait(10 * time.Second)
+		m.httpSrv.Close()
+	}()
 	return m.httpSrv.Start()
 }
 
