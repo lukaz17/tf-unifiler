@@ -54,7 +54,10 @@ func (m *ConfigModule) Export(outputPath string, diffOnly bool) error {
 	k.Load(structs.Provider(m.cfg, "koanf"), nil)
 
 	if diffOnly {
-		defaults := config.DefaultConfig()
+		defaults, err := config.DefaultConfig()
+		if err != nil {
+			return err
+		}
 		for key, defVal := range defaults.All() {
 			if val := k.Get(key); val != nil && reflect.DeepEqual(val, defVal) {
 				k.Delete(key)

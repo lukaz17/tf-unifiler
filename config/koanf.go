@@ -16,10 +16,12 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
@@ -28,12 +30,17 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-var cfg *RootConfig
+var (
+	cfg   *RootConfig
+	cfgMu sync.Mutex
+)
 
 const configFileName = "unifiler.yaml"
 
 // Init configuration for the application.
 func InitKoanf(useFS bool) (*RootConfig, error) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
 	if cfg != nil {
 		return cfg, nil
 	}
@@ -65,10 +72,10 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 }
 
 // Get default configuration values.
-func DefaultConfig() *koanf.Koanf {
+func DefaultConfig() (*koanf.Koanf, error) {
 	k := koanf.New(".")
 
-	k.Load(
+	err := k.Load(
 		structs.Provider(RootConfig{
 			Logger: &LoggerConfig{
 				Level: "info",
@@ -90,8 +97,11 @@ func DefaultConfig() *koanf.Koanf {
 		}, "koanf"),
 		nil,
 	)
+	if err != nil {
+		return nil, err
+	}
 
-	return k
+	return k, nil
 }
 
 // Check if the application is in portable mode.
@@ -104,15 +114,26 @@ func IsPortable() bool {
 // Build configurations for the application with the following priority:
 // Environment variables -> YAML configuration file -> default values.
 func buildConfig(useFS bool, f string) (*RootConfig, error) {
-	k := DefaultConfig()
-	if useFS && fileExists(f) {
-		k, _ = configFromYaml(k, f)
+	k, err := DefaultConfig()
+	if err != nil {
+		return &RootConfig{}, err
 	}
-	k, _ = configFromEnv(k)
+
+	var loadErr error
+	if useFS && fileExists(f) {
+		if _, err := configFromYaml(k, f); err != nil {
+			loadErr = fmt.Errorf("loading config file %s: %w", f, err)
+		}
+	}
+	if _, err := configFromEnv(k); err != nil && loadErr == nil {
+		loadErr = fmt.Errorf("loading environment config: %w", err)
+	}
 
 	var config RootConfig
-	err := k.Unmarshal("", &config)
-	return &config, err
+	if err := k.Unmarshal("", &config); err != nil {
+		return &config, err
+	}
+	return &config, loadErr
 }
 
 // Get configuration values from environment variables.
