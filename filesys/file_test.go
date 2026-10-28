@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package filesys
 
@@ -32,7 +31,12 @@ func TestList(t *testing.T) {
 	}{
 		{"files only", []string{"file.go"}, []string{"file.go"}},
 		{"directories only", []string{"../build"}, []string{filepath.FromSlash("../build"), filepath.FromSlash("../build/ci.go"), filepath.FromSlash("../build/env.go"), filepath.FromSlash("../build/git.go"), filepath.FromSlash("../build/go.go"), filepath.FromSlash("../build/os.go")}},
-		{"file and directories", []string{".", "file.go"}, []string{".", "directory.go", "directory_test.go", "exec", filepath.FromSlash("exec/exec.go"), filepath.FromSlash("exec/ffmpeg.go"), filepath.FromSlash("exec/mediainfo.go"), filepath.FromSlash("exec/mediainfo_report.go"), filepath.FromSlash("exec/mediainfo_test.go"), "file.go", "file_test.go"}},
+		{"file and directories", []string{"../.tests/module", "../.tests/readme.md"}, []string{
+			filepath.FromSlash("../.tests/module"), filepath.FromSlash("../.tests/module/fmt"), filepath.FromSlash("../.tests/module/fmt/1-printf.md"), filepath.FromSlash("../.tests/module/fmt/2-errorf.md"),
+			filepath.FromSlash("../.tests/module/http"), filepath.FromSlash("../.tests/module/http/1-get.md"), filepath.FromSlash("../.tests/module/http/2-post.md"), filepath.FromSlash("../.tests/module/http/3-put.md"), filepath.FromSlash("../.tests/module/http/4-delete.md"),
+			filepath.FromSlash("../.tests/module/readme.md"),
+			filepath.FromSlash("../.tests/readme.md"),
+		}},
 		{"two dots", []string{"../.tests"}, []string{
 			filepath.FromSlash("../.tests"), filepath.FromSlash("../.tests/basic"), filepath.FromSlash("../.tests/basic/1-helloworld.md"),
 			filepath.FromSlash("../.tests/module"), filepath.FromSlash("../.tests/module/fmt"), filepath.FromSlash("../.tests/module/fmt/1-printf.md"), filepath.FromSlash("../.tests/module/fmt/2-errorf.md"),
