@@ -16,6 +16,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -40,8 +41,10 @@ func listAndHashFiles(inputs []string, algorithms []string, recursive bool, noti
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if n, ok := notifier.(*tui.BubbleteaNotifier); ok {
-		ps := tui.RunProcessStatus(n)
+		ps := tui.RunProcessStatus(n, cancel)
 		defer ps.Stop()
 		total := uint64(len(contents))
 		for _, c := range contents {
@@ -54,6 +57,9 @@ func listAndHashFiles(inputs []string, algorithms []string, recursive bool, noti
 
 	var results []*fileHashResult
 	for _, c := range contents {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if c.IsDir {
 			continue
 		}

@@ -1,22 +1,22 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -101,17 +101,16 @@ func (m *ProcessStatus) WithAllowInterrupt(allow bool) *ProcessStatus {
 }
 
 // Display the ProcessStatus to the terminal.
-func (m *ProcessStatus) Run(notifier *BubbleteaNotifier) *TeaProgramHandle {
+func (m *ProcessStatus) Run(notifier *BubbleteaNotifier, onInterrupt func()) *TeaProgramHandle {
 	p := tea.NewProgram(m)
 	notifier.setProgram(p)
 
 	done := make(chan error, 1)
 	go func() {
 		_, err := p.Run()
-		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, tea.ErrInterrupted.Error()) || strings.Contains(errMsg, tea.ErrProgramKilled.Error()) {
-				os.Exit(1)
+		if errors.Is(err, tea.ErrInterrupted) || errors.Is(err, tea.ErrProgramKilled) {
+			if onInterrupt != nil {
+				onInterrupt()
 			}
 		}
 		done <- err

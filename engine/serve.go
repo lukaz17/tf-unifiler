@@ -16,13 +16,20 @@
 package engine
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/server"
 )
+
+const serverShutdownTimeout = 17 * time.Second
 
 // ServeModule handles serving the HTTP server.
 type ServeModule struct {
@@ -39,15 +46,32 @@ func NewServeModule(c *Controller) *ServeModule {
 	}
 }
 
-// Start listen for HTTP requests. Blocks until the server is stopped.
+// Start listen for HTTP requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
 func (m *ServeModule) Start() error {
 	addr := fmt.Sprintf(":%d", m.cfg.Server.HTTP.Port)
 	m.logger.Info().
 		Str("addr", addr).
 		Msg("Start listening for HTTP requests.")
 	m.httpSrv = server.New(addr)
-	defer m.httpSrv.Close()
-	return m.httpSrv.Start()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- m.httpSrv.Start()
+	}()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+		stop()
+		m.logger.Info().Msg("Shutdown signal received, stopping HTTP server.")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		defer cancel()
+		return m.httpSrv.Shutdown(shutdownCtx)
+	}
 }
 
 // Decorator to log error occurred when calling handlers.

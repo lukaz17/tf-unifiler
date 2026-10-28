@@ -16,6 +16,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -191,8 +192,10 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	offsetMs := opx.Ternary(offset == 0, offsetDef, big.NewInt(int64(offset*1000)))
 	intervalMs := opx.Ternary(interval == 0, intervalDef, big.NewInt(int64(interval*1000)))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if n, ok := m.notifier.(*tui.BubbleteaNotifier); ok {
-		ps := tui.RunProcessStatus(n)
+		ps := tui.RunProcessStatus(n, cancel)
 		defer ps.Stop()
 	}
 
@@ -203,6 +206,9 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	outputFilenameFormat := opx.Ternary(quality == 1, path.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), path.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
 	count := uint64(0)
 	for t := offsetMs; t.Cmp(limitMs) <= 0; t = new(big.Int).Add(t, intervalMs) {
+		if err := ctx.Err(); err != nil {
+			return count, err
+		}
 		outFile := opx.Ternary(quality == 1, fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t)), fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t), quality))
 		ffmOptions := &exec.FFmpegArgsOptions{
 			InputFile:      inputFile.AbsolutePath,
@@ -243,20 +249,20 @@ func VideoCmd() *cobra.Command {
 	}
 	rootCmd.PersistentFlags().StringP("file", "i", "", "Input video file.")
 
-		infoCmd := &cobra.Command{
-			Use:   "info",
-			Short: "Analyze video file.",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c := InitApp()
-				defer c.Close()
-				flags := ParseVideoFlags(cmd, args)
-				m := NewVideoModule(c, "info")
-				if err := validateSingleInput(flags.Inputs); err != nil {
-					return m.logError(err)
-				}
-				return m.logError(m.Info(flags.Inputs[0]))
-			},
-		}
+	infoCmd := &cobra.Command{
+		Use:   "info",
+		Short: "Analyze video file.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := InitApp()
+			defer c.Close()
+			flags := ParseVideoFlags(cmd, args)
+			m := NewVideoModule(c, "info")
+			if err := validateSingleInput(flags.Inputs); err != nil {
+				return m.logError(err)
+			}
+			return m.logError(m.Info(flags.Inputs[0]))
+		},
+	}
 	rootCmd.AddCommand(infoCmd)
 
 	extractFramesCmd := &cobra.Command{

@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -234,8 +234,8 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 
 	mappings := []*FileRenameMapping{}
 	for _, r := range fhResults {
-		parent := path.Dir(r.Entry.RelativePath)
-		ext := path.Ext(r.Entry.RelativePath)
+		parent := filepath.Dir(r.Entry.RelativePath)
+		ext := filepath.Ext(r.Entry.RelativePath)
 		targetName := prefix + hex.EncodeToString(r.Hashes[0].Hash) + ext
 		target := opx.Ternary(parent == ".", targetName, filesys.Join(parent, targetName))
 		mapping := &FileRenameMapping{
@@ -273,8 +273,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		}
 		err := os.Rename(e.Source, e.Target)
 		if err != nil {
-			m.logger.Err(err)
-			m.logger.Info().
+			m.logger.Err(err).
 				Str("src", filesys.NormalizePath(e.Source, true)).
 				Str("dest", filesys.NormalizePath(e.Target, true)).
 				Msg("Failed to rename file.")

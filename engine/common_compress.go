@@ -16,6 +16,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -115,8 +116,10 @@ func packFiles(
 	inputs []string, output string, format string, level compression.Level, solid nullable.Bool, dictSize int, password string, threadNum nullable.Int, move bool, normalize bool, separate bool,
 	pathConfig *config.PathConfig, logger zerolog.Logger, notifier diag.Notifier, tuiMode bool,
 ) ([]string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if n, ok := notifier.(*tui.BubbleteaNotifier); ok && tuiMode {
-		ps := tui.RunProcessStatus(n)
+		ps := tui.RunProcessStatus(n, cancel)
 		defer ps.Stop()
 		inputCount := opx.Ternary(separate, len(inputs), 1)
 		n.SetTotal(uint64(inputCount))
@@ -126,6 +129,9 @@ func packFiles(
 
 	if separate {
 		for _, input := range inputs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			archiveName := getArchiveName(input, "."+format)
 			archivePath := filesys.Join(output, archiveName)
 			sInput := input

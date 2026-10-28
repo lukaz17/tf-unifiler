@@ -16,6 +16,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -37,6 +38,7 @@ func New(addr string) *Server {
 		Handler: s.engine,
 
 		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	return s
 }
@@ -55,9 +57,9 @@ func (s *Server) Start() error {
 	return err
 }
 
-// Stop serving and release resources.
-func (s *Server) Close() error {
-	return s.http.Close()
+// Gracefully stop serving and wait for in-flight requests to finish, bounded by ctx.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.http.Shutdown(ctx)
 }
 
 // Build the route table served by this Server. Callable again to rebuild after
