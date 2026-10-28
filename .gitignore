@@ -4,6 +4,7 @@
 # Local env and secrets
 .env
 .env.*
+!.env.example
 *.local.env
 
 # OS files
