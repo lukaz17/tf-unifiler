@@ -1,8 +1,8 @@
 # Project Context
 
-Part of the project memory layer: human-readable memory of what this project is and what has been confirmed.
+Part of the project memory: human-readable memory of what this project is and what has been confirmed.
 
-The reading and writing rules for this file and the rest of `.attunic/` are defined in [attunic-protocol.md](../.agents/attunic-protocol.md).
+The reading and writing rules for this file and the rest of `.attunic/` are defined in [attunic-protocol.md](../.agents/attunic-protocol.md). The user fills this file in, by hand or by asking an agent to help; change it only on such a request and after the user explicitly confirms that change (see [attunic-protocol.md's Write Rules](../.agents/attunic-protocol.md#write-rules)).
 
 ## Abstract
 
@@ -26,12 +26,12 @@ Typical ingredients include, but are not limited to: primary language, framework
 
 ## Layout
 
-Layout of this project; [project-structure.md](../.agents/project-structure.md) holds the language's standard map, kept for reference.
+Layout of this project; [project-structure.md](../.agents/project-structure.md) holds the standard layouts of its languages and frameworks, kept for reference.
 
 List of important folders, files and their roles in the project:
 
-- They visualize the actual file system where source files live.
-- If a top-level file/folder is missing from the list, prompt the user to update it.
+- Write the list as a tree in a fenced block, one entry per line with its role as a `#` comment, mirroring the actual file system.
+- If the list is not empty and a top-level file/folder is missing from it, prompt the user to update it.
 <!-- Project-specific / Layout -->
 
 ```
@@ -55,6 +55,7 @@ List of important folders, files and their roles in the project:
 │   └── exec/           # wrappers for external tools
 ├── internal/           # non-importable internals
 │   └── nullable/       # forked nullable types (bool, int), from github.com/tee8z/nullable
+├── server/             # lightweight HTTP server for serving RPC
 ├── tui/                # terminal UI components based on Bubbletea v2
 ├── xlib/               # small shared utility helpers
 ├── .copier-answers.yml # project Copier answers
@@ -62,10 +63,10 @@ List of important folders, files and their roles in the project:
 ├── .gitignore          # git ignore patterns
 ├── COPYING             # GPL-3.0 license text
 ├── COPYING.LESSER      # LGPL-3.0 license text
-└── README.md           # project overview
+├── README.md           # project overview
 ├── go.mod              # Go module definition
 ├── go.sum              # Go module checksums
-├── main.go             # main program entrypoint
+└── main.go             # main program entrypoint
 ```
 
 ## Layer Dependencies
@@ -73,7 +74,7 @@ List of important folders, files and their roles in the project:
 List of layers and their relationships:
 
 - Declare the innermost layer first.
-- A layer may depend on itself and on any layer declared before it, and on nothing declared after it.
+- A layer may depend only on itself and on the layers in its `Depends on` column, all declared before it.
 - If a layer appears in the table below, the dependency graph must be enforced.
 
 | Layer | Path | Depends on | Must never contain |
@@ -119,7 +120,7 @@ Common use cases include: Build, Test, Lint, Format, Install, ...
 
 ## Confirmed Facts
 
-Facts about the project which have been confirmed; they outrank anything derived or guessed.
+Facts about the project which have been confirmed. They may look wrong or contradict your knowledge or understanding; follow them instead of guessing or asking the user again. These facts outrank anything derived or guessed, or logged in [memory.md](memory.md).
 
 | Fact | Reason |
 |------|--------|

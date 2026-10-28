@@ -1,26 +1,27 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
@@ -29,12 +30,17 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-var cfg *RootConfig
+var (
+	cfg   *RootConfig
+	cfgMu sync.Mutex
+)
 
 const configFileName = "unifiler.yaml"
 
 // Init configuration for the application.
 func InitKoanf(useFS bool) (*RootConfig, error) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
 	if cfg != nil {
 		return cfg, nil
 	}
@@ -66,11 +72,14 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 }
 
 // Get default configuration values.
-func DefaultConfig() *koanf.Koanf {
+func DefaultConfig() (*koanf.Koanf, error) {
 	k := koanf.New(".")
 
-	k.Load(
+	err := k.Load(
 		structs.Provider(RootConfig{
+			Logger: &LoggerConfig{
+				Level: "info",
+			},
 			Path: &PathConfig{
 				FFMpegPath:      "ffmpeg",
 				ImageMagickPath: "magick",
@@ -80,11 +89,19 @@ func DefaultConfig() *koanf.Koanf {
 				X264Path:        "x264",
 				X265Path:        "x265",
 			},
+			Server: &ServerConfig{
+				HTTP: &HTTPConfig{
+					Port: 8080,
+				},
+			},
 		}, "koanf"),
 		nil,
 	)
+	if err != nil {
+		return nil, err
+	}
 
-	return k
+	return k, nil
 }
 
 // Check if the application is in portable mode.
@@ -97,15 +114,26 @@ func IsPortable() bool {
 // Build configurations for the application with the following priority:
 // Environment variables -> YAML configuration file -> default values.
 func buildConfig(useFS bool, f string) (*RootConfig, error) {
-	k := DefaultConfig()
-	if useFS && fileExists(f) {
-		k, _ = configFromYaml(k, f)
+	k, err := DefaultConfig()
+	if err != nil {
+		return &RootConfig{}, err
 	}
-	k, _ = configFromEnv(k)
+
+	var loadErr error
+	if useFS && fileExists(f) {
+		if _, err := configFromYaml(k, f); err != nil {
+			loadErr = fmt.Errorf("loading config file %s: %w", f, err)
+		}
+	}
+	if _, err := configFromEnv(k); err != nil && loadErr == nil {
+		loadErr = fmt.Errorf("loading environment config: %w", err)
+	}
 
 	var config RootConfig
-	err := k.Unmarshal("", &config)
-	return &config, err
+	if err := k.Unmarshal("", &config); err != nil {
+		return &config, err
+	}
+	return &config, loadErr
 }
 
 // Get configuration values from environment variables.

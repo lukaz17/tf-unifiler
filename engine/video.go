@@ -1,22 +1,22 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -45,7 +45,7 @@ type VideoModule struct {
 // Return new VideoModule.
 func NewVideoModule(c *Controller, cmdName string) *VideoModule {
 	return &VideoModule{
-		cfg:      c.Root,
+		cfg:      c.Config,
 		logger:   c.CommandLogger("video", cmdName),
 		notifier: c.Notifier,
 	}
@@ -192,8 +192,10 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	offsetMs := opx.Ternary(offset == 0, offsetDef, big.NewInt(int64(offset*1000)))
 	intervalMs := opx.Ternary(interval == 0, intervalDef, big.NewInt(int64(interval*1000)))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if n, ok := m.notifier.(*tui.BubbleteaNotifier); ok {
-		ps := tui.RunProcessStatus(n)
+		ps := tui.RunProcessStatus(n, cancel)
 		defer ps.Stop()
 	}
 
@@ -204,6 +206,9 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	outputFilenameFormat := opx.Ternary(quality == 1, path.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), path.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
 	count := uint64(0)
 	for t := offsetMs; t.Cmp(limitMs) <= 0; t = new(big.Int).Add(t, intervalMs) {
+		if err := ctx.Err(); err != nil {
+			return count, err
+		}
 		outFile := opx.Ternary(quality == 1, fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t)), fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t), quality))
 		ffmOptions := &exec.FFmpegArgsOptions{
 			InputFile:      inputFile.AbsolutePath,
@@ -231,8 +236,9 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *VideoModule) logError(err error) {
+func (m *VideoModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Define Cobra Command for Video module.
@@ -246,16 +252,15 @@ func VideoCmd() *cobra.Command {
 	infoCmd := &cobra.Command{
 		Use:   "info",
 		Short: "Analyze video file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "info")
 			if err := validateSingleInput(flags.Inputs); err != nil {
-				m.logError(err)
-				return
+				return m.logError(err)
 			}
-			m.logError(m.Info(flags.Inputs[0]))
+			return m.logError(m.Info(flags.Inputs[0]))
 		},
 	}
 	rootCmd.AddCommand(infoCmd)
@@ -263,16 +268,15 @@ func VideoCmd() *cobra.Command {
 	extractFramesCmd := &cobra.Command{
 		Use:   "extract-frames",
 		Short: "Extract multiple frames in video file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "screenshot")
 			if err := validateSingleInput(flags.Inputs); err != nil {
-				m.logError(err)
-				return
+				return m.logError(err)
 			}
-			m.logError(m.ExtractFrames(flags.Inputs[0], flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
+			return m.logError(m.ExtractFrames(flags.Inputs[0], flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
 		},
 	}
 	extractFramesCmd.Flags().IntP("quality", "q", 90, "Quality factor for screenshot in scale 1-100.")

@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -199,8 +198,9 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *MirrorModule) logError(err error) {
+func (m *MirrorModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Return directory path to store Mirror module's ouputs inside Unifiler workspace.
@@ -219,12 +219,12 @@ func MirrorCmd() *cobra.Command {
 	exportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Create file structure defined by checksum file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, []string{})
 			m := NewMirrorModule(c, "export")
-			m.logError(m.Export(flags.WorkspaceDir, flags.ChecksumFile, flags.Output))
+			return m.logError(m.Export(flags.WorkspaceDir, flags.ChecksumFile, flags.Output))
 		},
 	}
 	exportCmd.Flags().StringP("checksum", "i", "", "Checksum file path. Only supported SHA-256.")
@@ -234,12 +234,12 @@ func MirrorCmd() *cobra.Command {
 	scanCmd := &cobra.Command{
 		Use:   "scan",
 		Short: "Scan inputs and import them to mirror repository.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, args)
 			m := NewMirrorModule(c, "export")
-			m.logError(m.Scan(flags.WorkspaceDir, flags.Inputs))
+			return m.logError(m.Scan(flags.WorkspaceDir, flags.Inputs))
 		},
 	}
 	scanCmd.Flags().StringSliceP("inputs", "i", []string{}, "Files/Directories to import.")

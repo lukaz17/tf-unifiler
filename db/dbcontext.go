@@ -1,22 +1,22 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package db
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -61,7 +61,9 @@ func Connect(uri string) (*DbContext, error) {
 		return nil, err
 	}
 	c := &DbContext{db, uri}
-	c.Migrate()
+	if err := c.Migrate(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -113,9 +115,5 @@ func (c *DbContext) Truncate(model interface{}) {
 
 // Determine if the error is record not found. Specifically for Gorm.
 func (c *DbContext) isEmptyResultError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return errStr == "record not found"
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }

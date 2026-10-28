@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package filesys
 
@@ -61,7 +60,7 @@ func CreateEntry(fPath string) (*FsEntry, error) {
 	}
 	entry := &FsEntry{
 		AbsolutePath: absolutePath,
-		RelativePath: NormalizePath(fPath, true),
+		RelativePath: NormalizePath(fPath, false),
 		Name:         fileInfo.Name(),
 		IsDir:        fileInfo.IsDir(),
 	}
@@ -156,18 +155,23 @@ func NormalizePaths(fPaths []string, alwaysForwardSlash bool) []string {
 	return normalized
 }
 
-func WriteLines(fPath string, lines []string) error {
-	f, err := os.OpenFile(fPath, os.O_WRONLY|os.O_CREATE, 0664)
+func WriteLines(fPath string, lines []string) (err error) {
+	f, err := os.OpenFile(fPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	writer := bufio.NewWriter(f)
 	for _, line := range lines {
-		writer.WriteString(line)
-		writer.WriteString("\n")
+		if _, err = writer.WriteString(line + "\n"); err != nil {
+			return err
+		}
 	}
-	writer.Flush()
-
-	return nil
+	err = writer.Flush()
+	return err
 }

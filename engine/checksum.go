@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -126,8 +125,9 @@ func (m *ChecksumModule) Create(inputs []string, outDir string, algorithms []str
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *ChecksumModule) logError(err error) {
+func (m *ChecksumModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Define Cobra Command for Checksum module.
@@ -140,12 +140,12 @@ func ChecksumCmd() *cobra.Command {
 	createCmd := &cobra.Command{
 		Use:   "create <input>...",
 		Short: "Create checksum file.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseChecksumFlags(cmd, args)
 			m := NewChecksumModule(c, "create")
-			m.logError(m.Create(flags.Inputs, flags.Output, flags.Algorithms, flags.OutputName))
+			return m.logError(m.Create(flags.Inputs, flags.Output, flags.Algorithms, flags.OutputName))
 		},
 	}
 	createCmd.Flags().StringSliceP("algorithm", "a", []string{"sha1"}, "Hash algorithms to use, comma-separated list supported. Supported algorithms: crc32, md4, md5, ripemd160, sha1, sha224, sha256, sha384, sha512.")

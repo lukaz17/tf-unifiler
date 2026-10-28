@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -21,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -51,7 +50,7 @@ type FileModule struct {
 // Return new FileModule.
 func NewFileModule(c *Controller, cmdName string) *FileModule {
 	return &FileModule{
-		cfg:      c.Root,
+		cfg:      c.Config,
 		notifier: c.Notifier,
 		logger:   c.CommandLogger("file", cmdName),
 	}
@@ -235,8 +234,8 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 
 	mappings := []*FileRenameMapping{}
 	for _, r := range fhResults {
-		parent := path.Dir(r.Entry.RelativePath)
-		ext := path.Ext(r.Entry.RelativePath)
+		parent := filepath.Dir(r.Entry.RelativePath)
+		ext := filepath.Ext(r.Entry.RelativePath)
 		targetName := prefix + hex.EncodeToString(r.Hashes[0].Hash) + ext
 		target := opx.Ternary(parent == ".", targetName, filesys.Join(parent, targetName))
 		mapping := &FileRenameMapping{
@@ -274,8 +273,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		}
 		err := os.Rename(e.Source, e.Target)
 		if err != nil {
-			m.logger.Err(err)
-			m.logger.Info().
+			m.logger.Err(err).
 				Str("src", filesys.NormalizePath(e.Source, true)).
 				Str("dest", filesys.NormalizePath(e.Target, true)).
 				Msg("Failed to rename file.")
@@ -291,8 +289,9 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *FileModule) logError(err error) {
+func (m *FileModule) logError(err error) error {
 	logProgramError(m.logger, err)
+	return err
 }
 
 // Define Cobra Command for File module.
@@ -306,12 +305,12 @@ func FileCmd() *cobra.Command {
 	hashCmd := &cobra.Command{
 		Use:   "hash <input>...",
 		Short: "Compute and print hashes for files.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "hash")
-			m.logError(m.Hash(flags.Inputs))
+			return m.logError(m.Hash(flags.Inputs))
 		},
 	}
 	rootCmd.AddCommand(hashCmd)
@@ -319,12 +318,12 @@ func FileCmd() *cobra.Command {
 	packCmd := &cobra.Command{
 		Use:   "pack <input>...",
 		Short: "Pack files into an archive.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "pack")
-			m.logError(m.Pack(flags.Inputs, flags.Output, flags.Format, flags.Level, flags.Solid, flags.DictSize, flags.Password, flags.Threads, flags.Move, flags.Normalize, flags.Separate))
+			return m.logError(m.Pack(flags.Inputs, flags.Output, flags.Format, flags.Level, flags.Solid, flags.DictSize, flags.Password, flags.Threads, flags.Move, flags.Normalize, flags.Separate))
 		},
 	}
 	packCmd.Flags().IntP("dict", "d", 0, "Dictionary size in MB for compression (0 = use default).")
@@ -342,12 +341,12 @@ func FileCmd() *cobra.Command {
 	renameCmd := &cobra.Command{
 		Use:   "rename <input>...",
 		Short: "Multi-rename files and directories.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c := InitApp()
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "rename")
-			m.logError(m.Rename(flags.Inputs, flags.Preset))
+			return m.logError(m.Rename(flags.Inputs, flags.Preset))
 		},
 	}
 	renameCmd.Flags().StringP("preset", "p", "", "Name of pre-defined settings for renaming.")

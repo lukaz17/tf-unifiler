@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
@@ -60,7 +59,7 @@ func version() string {
 // Initialize configurations, loggings for internal modules, and display basic
 // information about this invocation.
 func InitApp() *Controller {
-	cfg := NewController(true)
+	ctrl := NewController(true)
 
 	pwd, _ := os.Getwd()
 	pwd, _ = filesys.GetAbsPath(pwd)
@@ -72,14 +71,14 @@ func InitApp() *Controller {
 	buildDate := opx.Ternary(gitDate == "", time.Now().UTC(), gitDate2)
 	fmt.Printf("Copyright (C) %d T-Force I/O\n", buildDate.Year())
 	fmt.Printf("Licensed under GPL-3.0 license. See COPYING file along with this program for more details.\n\n")
-	cfg.Logger.Info().Msg("-----------------")
-	cfg.Logger.Info().Msgf("Working directory %s", pwd)
-	cfg.Logger.Info().Msgf("Config directory %s", cfg.Root.ConfigDir)
-	cfg.Logger.Info().Msgf("Executable file %s", exec)
-	cfg.Logger.Info().Msgf("Portable mode %t", cfg.Root.IsPortable)
-	cfg.Logger.Info().Msg("-----------------")
+	ctrl.Logger.Info().Msg("-----------------")
+	ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
+	ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.IsPortable)
+	ctrl.Logger.Info().Msg("-----------------")
 
-	return cfg
+	return ctrl
 }
 
 // Execute the program.
@@ -103,6 +102,7 @@ Licensed under GPL-3.0 license. See COPYING file along with this program for mor
 	rootCmd.AddCommand(FileCmd())
 	rootCmd.AddCommand(MetadataCmd())
 	rootCmd.AddCommand(MirrorCmd())
+	rootCmd.AddCommand(ServeCmd())
 	rootCmd.AddCommand(VideoCmd())
 
 	if err := rootCmd.Execute(); err != nil {

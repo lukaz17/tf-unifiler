@@ -1,24 +1,21 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package engine
 
 import (
-	"os"
-
 	"github.com/rs/zerolog"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/crypto/hasher"
@@ -26,23 +23,24 @@ import (
 	"github.com/tforceaio/tf-unifiler/filesys"
 	"github.com/tforceaio/tf-unifiler/filesys/exec"
 	"github.com/tforceaio/tf-unifiler/tui"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Controller is the entrypoint for working with application configurations and
 // loggings.
 type Controller struct {
-	Root     *config.RootConfig
+	Config   *config.RootConfig
 	Logger   zerolog.Logger
 	Notifier diag.Notifier
 
-	logFile *os.File
+	logFile *lumberjack.Logger
 }
 
 // Entrypoint for creating new instance of Controller.
 // useFS will instruct this function to read configurations and create log file.
 func NewController(useFS bool) *Controller {
 	cfg, err := config.InitKoanf(useFS)
-	logger, logFile, err2 := config.InitZerolog(cfg.ConfigDir, useFS)
+	logger, logFile, err2 := diag.NewLogger(cfg, useFS)
 	if err != nil {
 		logger.Err(err).Msg("error initializing config")
 	}
@@ -57,7 +55,7 @@ func NewController(useFS bool) *Controller {
 		exec.SetNotify(notifier)
 	}
 	return &Controller{
-		Root:     cfg,
+		Config:   cfg,
 		Logger:   logger,
 		Notifier: notifier,
 		logFile:  logFile,
