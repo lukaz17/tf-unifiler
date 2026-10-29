@@ -41,7 +41,7 @@ List of important folders, files and their roles in the project:
 │   └── workflows/      # GitHub Actions release workflow
 ├── .vscode/            # Visual Studio Code configuration as code
 ├── build/              # build driver (`ci.go` behind the go toolchain init)
-├── config/             # global configuration from file, environement variables
+├── config/             # global configuration from file, environment variables
 ├── core/               # project-level std lib
 │   └── compression/    # file compression types and constants
 ├── crypto/             # crypto primitives
