@@ -56,6 +56,7 @@ List of important folders, files and their roles in the project:
 ├── internal/           # non-importable internals
 │   └── nullable/       # forked nullable types (bool, int), from github.com/tee8z/nullable
 ├── server/             # lightweight HTTP server for serving RPC
+├── task/               # in-memory task queue for the HTTP server
 ├── tui/                # terminal UI components based on Bubbletea v2
 ├── xlib/               # small shared utility helpers
 ├── .copier-answers.yml # project Copier answers
