@@ -90,6 +90,7 @@ func DefaultConfig() (*koanf.Koanf, error) {
 				X265Path:        "x265",
 			},
 			Server: &ServerConfig{
+				Name: "tf-unifiler",
 				HTTP: &HTTPConfig{
 					Port: 8080,
 				},

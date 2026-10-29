@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/tforceaio/tf-unifiler/engine"
+	"github.com/tforceaio/tf-unifiler/server"
 )
 
 func TestStripQueueFlag(t *testing.T) {
@@ -88,6 +89,32 @@ func TestIsDeferred(t *testing.T) {
 			}
 			if queued != tc.queued {
 				t.Errorf("isDeferred(%v) queued = %v, want %v", tc.args, queued, tc.queued)
+			}
+		})
+	}
+}
+
+func TestVerifyServer(t *testing.T) {
+	const svc, ver = "tf-unifiler", "0.7.0.123-dev.abcd1234"
+	cases := []struct {
+		name    string
+		st      server.StatusResponse
+		wantErr bool
+	}{
+		{"match", server.StatusResponse{Service: svc, Version: ver}, false},
+		{"foreign service", server.StatusResponse{Service: "something-else", Version: ver}, true},
+		{"empty service", server.StatusResponse{Service: "", Version: ver}, true},
+		{"version mismatch", server.StatusResponse{Service: svc, Version: "0.6.0.1"}, true},
+		{"empty version", server.StatusResponse{Service: svc, Version: ""}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := verifyServer(tc.st, svc, ver)
+			if tc.wantErr && err == nil {
+				t.Fatalf("verifyServer(%+v): expected error, got nil", tc.st)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("verifyServer(%+v): unexpected error: %v", tc.st, err)
 			}
 		})
 	}

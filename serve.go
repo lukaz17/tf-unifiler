@@ -100,6 +100,7 @@ func (m *ServeModule) statusInfo() server.StatusInfo {
 	exec, _ := os.Executable()
 	exec, _ = filesys.GetAbsPath(exec)
 	return server.StatusInfo{
+		Service:    m.cfg.Server.Name,
 		Version:    engine.Version(),
 		WorkingDir: pwd,
 		ConfigDir:  m.cfg.ConfigDir,

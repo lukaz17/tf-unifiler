@@ -63,6 +63,7 @@ func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
 
 func TestStatusEndpoint(t *testing.T) {
 	s := New(":0", StatusInfo{
+		Service:    "tf-unifiler",
 		Version:    "1.2.3",
 		WorkingDir: "/wd",
 		ConfigDir:  "/cfg",
@@ -80,8 +81,8 @@ func TestStatusEndpoint(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding status response: %v", err)
 	}
-	if got.Service != ServiceName {
-		t.Errorf("expected service %q, got %q", ServiceName, got.Service)
+	if got.Service != "tf-unifiler" {
+		t.Errorf("expected service %q, got %q", "tf-unifiler", got.Service)
 	}
 	if got.Version != "1.2.3" || got.WorkingDir != "/wd" || got.ConfigDir != "/cfg" || got.Executable != "/bin/unifiler" || !got.Portable {
 		t.Errorf("status identity fields not echoed back: %+v", got)

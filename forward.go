@@ -24,6 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
+	"github.com/tforceaio/tf-unifiler/engine"
 	"github.com/tforceaio/tf-unifiler/server"
 )
 
@@ -90,8 +91,8 @@ func runQueued(args []string) error {
 	if err != nil {
 		return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d; is 'unifiler serve' running? (%w)", port, err)
 	}
-	if st.Service != server.ServiceName {
-		return fmt.Errorf("a server is listening on 127.0.0.1:%d but it is not TFunifiler; not forwarding", port)
+	if err := verifyServer(st, cfg.Server.Name, engine.Version()); err != nil {
+		return fmt.Errorf("not forwarding to the server on 127.0.0.1:%d: %w", port, err)
 	}
 
 	t, err := client.Enqueue(ctx, args)
@@ -100,5 +101,16 @@ func runQueued(args []string) error {
 	}
 
 	fmt.Printf("Enqueued task %s (%s)\n", t.ID, t.Status)
+	return nil
+}
+
+// Reject a status document that does not belong to a matching TFunifiler server.
+func verifyServer(st server.StatusResponse, wantService, wantVersion string) error {
+	if st.Service != wantService {
+		return fmt.Errorf("service %q does not match expected %q; it is not TFunifiler", st.Service, wantService)
+	}
+	if st.Version != wantVersion {
+		return fmt.Errorf("server version %q does not match client %q; restart 'unifiler serve' with this build", st.Version, wantVersion)
+	}
 	return nil
 }

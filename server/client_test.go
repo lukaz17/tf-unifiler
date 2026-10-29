@@ -25,7 +25,7 @@ import (
 )
 
 func TestClientStatus(t *testing.T) {
-	c := newTestClient(t, StatusInfo{Version: "9.9.9"}, &fakeTasks{
+	c := newTestClient(t, StatusInfo{Service: "tf-unifiler", Version: "9.9.9"}, &fakeTasks{
 		statsFn: func() (int, int) { return 1, 3 },
 	})
 
@@ -33,8 +33,8 @@ func TestClientStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if st.Service != ServiceName {
-		t.Errorf("expected service %q, got %q", ServiceName, st.Service)
+	if st.Service != "tf-unifiler" {
+		t.Errorf("expected service %q, got %q", "tf-unifiler", st.Service)
 	}
 	if st.Version != "9.9.9" {
 		t.Errorf("expected version echoed, got %q", st.Version)
@@ -66,8 +66,8 @@ func TestClientStatusForeignServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if st.Service == ServiceName {
-		t.Errorf("foreign server should not report service %q", ServiceName)
+	if st.Service == "tf-unifiler" {
+		t.Errorf("foreign server should not report service %q", "tf-unifiler")
 	}
 }
 

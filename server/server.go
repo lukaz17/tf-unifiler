@@ -24,9 +24,6 @@ import (
 	"github.com/tforceaio/tf-unifiler/task"
 )
 
-// ServiceName is the identity marker reported by the status endpoint.
-const ServiceName = "tf-unifiler"
-
 // TaskService is the subset of the task queue the HTTP layer depends on.
 type TaskService interface {
 	Enqueue(args []string) (task.Task, error)
@@ -96,7 +93,7 @@ func (s *Server) router() *gin.Engine {
 func (s *Server) handleStatus(c *gin.Context) {
 	pending, total := s.tasks.Stats()
 	c.JSON(http.StatusOK, StatusResponse{
-		Service:      ServiceName,
+		Service:      s.info.Service,
 		Version:      s.info.Version,
 		WorkingDir:   s.info.WorkingDir,
 		ConfigDir:    s.info.ConfigDir,
@@ -109,6 +106,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 
 // StatusInfo is the static server identity reported by the status endpoint.
 type StatusInfo struct {
+	Service    string
 	Version    string
 	WorkingDir string
 	ConfigDir  string
