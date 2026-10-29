@@ -82,10 +82,38 @@ func (q *Queue) Start() {
 	}
 }
 
-func (q *Queue) worker() {
-	defer q.wg.Done()
-	for id := range q.pending {
-		q.run(id)
+// Stop accepting new tasks, cancel pending and running tasks, and wait for the workers to drain, bounded by ctx.
+func (q *Queue) Shutdown(ctx context.Context) error {
+	q.mu.Lock()
+	if q.accepting {
+		q.accepting = false
+		close(q.pending)
+	}
+	for _, e := range q.entries {
+		e.mu.Lock()
+		switch e.status {
+		case StatusQueued:
+			e.status = StatusCanceled
+			e.finishedAt = time.Now().UTC()
+		case StatusRunning:
+			if e.cancel != nil {
+				e.cancel()
+			}
+		}
+		e.mu.Unlock()
+	}
+	q.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		q.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -123,6 +151,105 @@ func (q *Queue) Enqueue(args []string) (Task, error) {
 	}
 }
 
+// Return a snapshot of the task with the given id.
+func (q *Queue) Get(id string) (Task, bool) {
+	e := q.lookup(id)
+	if e == nil {
+		return Task{}, false
+	}
+	return e.snapshot(), true
+}
+
+// Return snapshots of all tasks in enqueue order.
+func (q *Queue) List() []Task {
+	q.mu.Lock()
+	entries := make([]*entry, 0, len(q.order))
+	for _, id := range q.order {
+		if e := q.entries[id]; e != nil {
+			entries = append(entries, e)
+		}
+	}
+	q.mu.Unlock()
+
+	tasks := make([]Task, 0, len(entries))
+	for _, e := range entries {
+		tasks = append(tasks, e.snapshot())
+	}
+	return tasks
+}
+
+// Mark a queued task canceled or signal a running task to stop (best-effort).
+func (q *Queue) Cancel(id string) error {
+	e := q.lookup(id)
+	if e == nil {
+		return ErrNotFound
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	switch e.status {
+	case StatusQueued:
+		e.status = StatusCanceled
+		e.finishedAt = time.Now().UTC()
+	case StatusRunning:
+		e.status = StatusCanceled
+		if e.cancel != nil {
+			e.cancel()
+		}
+	}
+	return nil
+}
+
+// Remove all terminal (succeeded/failed/canceled) tasks and return the number removed.
+func (q *Queue) Clear() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	kept := make([]string, 0, len(q.order))
+	removed := 0
+	for _, id := range q.order {
+		e := q.entries[id]
+		if e == nil {
+			continue
+		}
+		if e.isTerminal() {
+			delete(q.entries, id)
+			removed++
+			continue
+		}
+		kept = append(kept, id)
+	}
+	q.order = kept
+	return removed
+}
+
+// Return the number of tasks not yet terminal (queued or running) and the total number of tasks currently tracked.
+func (q *Queue) Stats() (pending, total int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	total = len(q.order)
+	for _, id := range q.order {
+		e := q.entries[id]
+		if e == nil {
+			continue
+		}
+		if !e.isTerminal() {
+			pending++
+		}
+	}
+	return pending, total
+}
+
+// Return the entry with the given id, or nil when no task matches.
+func (q *Queue) lookup(id string) *entry {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.entries[id]
+}
+
+// Execute the task with the given id via the runner and record its final status,
+// skipping one canceled before it starts; a Cancel landing mid-run wins over the runner's outcome.
 func (q *Queue) run(id string) {
 	e := q.lookup(id)
 	if e == nil {
@@ -179,119 +306,10 @@ func (q *Queue) safeRun(ctx context.Context, args []string, out *boundedBuffer) 
 	return q.runner(ctx, args, out)
 }
 
-// Return a snapshot of the task with the given id.
-func (q *Queue) Get(id string) (Task, bool) {
-	e := q.lookup(id)
-	if e == nil {
-		return Task{}, false
+// Consume ids from the pending channel and run each task until Shutdown closes the channel.
+func (q *Queue) worker() {
+	defer q.wg.Done()
+	for id := range q.pending {
+		q.run(id)
 	}
-	return e.snapshot(), true
-}
-
-// Return snapshots of all tasks in enqueue order.
-func (q *Queue) List() []Task {
-	q.mu.Lock()
-	entries := make([]*entry, 0, len(q.order))
-	for _, id := range q.order {
-		if e := q.entries[id]; e != nil {
-			entries = append(entries, e)
-		}
-	}
-	q.mu.Unlock()
-
-	tasks := make([]Task, 0, len(entries))
-	for _, e := range entries {
-		tasks = append(tasks, e.snapshot())
-	}
-	return tasks
-}
-
-// Mark a queued task canceled (the worker skips it) or signal a running
-// task to stop (best-effort; the stop takes effect only where the runner
-// honors the context).
-func (q *Queue) Cancel(id string) error {
-	e := q.lookup(id)
-	if e == nil {
-		return ErrNotFound
-	}
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	switch e.status {
-	case StatusQueued:
-		e.status = StatusCanceled
-		e.finishedAt = time.Now().UTC()
-	case StatusRunning:
-		e.status = StatusCanceled
-		if e.cancel != nil {
-			e.cancel()
-		}
-	}
-	return nil
-}
-
-// Remove all terminal (succeeded/failed/canceled) tasks and return the number
-// removed.
-func (q *Queue) Clear() int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	kept := make([]string, 0, len(q.order))
-	removed := 0
-	for _, id := range q.order {
-		e := q.entries[id]
-		if e == nil {
-			continue
-		}
-		if e.isTerminal() {
-			delete(q.entries, id)
-			removed++
-			continue
-		}
-		kept = append(kept, id)
-	}
-	q.order = kept
-	return removed
-}
-
-// Stop accepting new tasks, cancel pending and running tasks, and wait for
-// the workers to drain, bounded by ctx.
-func (q *Queue) Shutdown(ctx context.Context) error {
-	q.mu.Lock()
-	if q.accepting {
-		q.accepting = false
-		close(q.pending)
-	}
-	for _, e := range q.entries {
-		e.mu.Lock()
-		switch e.status {
-		case StatusQueued:
-			e.status = StatusCanceled
-			e.finishedAt = time.Now().UTC()
-		case StatusRunning:
-			if e.cancel != nil {
-				e.cancel()
-			}
-		}
-		e.mu.Unlock()
-	}
-	q.mu.Unlock()
-
-	done := make(chan struct{})
-	go func() {
-		q.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (q *Queue) lookup(id string) *entry {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.entries[id]
 }

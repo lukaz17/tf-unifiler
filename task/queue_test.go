@@ -44,13 +44,6 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Fatal("condition not met before deadline")
 }
 
-func TestEnqueueRejectsEmptyArgs(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
-	if _, err := q.Enqueue(nil); !errors.Is(err, ErrEmptyArgs) {
-		t.Fatalf("expected ErrEmptyArgs, got %v", err)
-	}
-}
-
 func TestSequentialOrderAtConcurrencyOne(t *testing.T) {
 	var mu sync.Mutex
 	order := []string{}
@@ -110,6 +103,47 @@ func TestConcurrencyRunsInParallel(t *testing.T) {
 	}
 	waitFor(t, func() bool { return atomic.LoadInt32(&maxSeen) == 3 })
 	close(proceed)
+}
+
+func TestShutdownRejectsEnqueue(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	q.Start()
+	if err := q.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if _, err := q.Enqueue([]string{"x"}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestEnqueueRejectsEmptyArgs(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	if _, err := q.Enqueue(nil); !errors.Is(err, ErrEmptyArgs) {
+		t.Fatalf("expected ErrEmptyArgs, got %v", err)
+	}
+}
+
+func TestBacklogFull(t *testing.T) {
+	block := make(chan struct{})
+	q := New(func(context.Context, []string, io.Writer) error {
+		<-block
+		return nil
+	}, 1, 1, silentLogger())
+	q.Start()
+
+	// First is picked up by the worker; second fills the backlog of 1; third overflows.
+	if _, err := q.Enqueue([]string{"1"}); err != nil {
+		t.Fatalf("enqueue 1: %v", err)
+	}
+	waitFor(t, func() bool { return len(q.pending) == 0 })
+	if _, err := q.Enqueue([]string{"2"}); err != nil {
+		t.Fatalf("enqueue 2: %v", err)
+	}
+	_, err := q.Enqueue([]string{"3"})
+	if !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("expected ErrQueueFull, got %v", err)
+	}
+	close(block)
 }
 
 func TestCancelQueuedTask(t *testing.T) {
@@ -176,6 +210,68 @@ func TestCancelRunningTaskSignalsContext(t *testing.T) {
 	})
 }
 
+func TestCancelUnknownTask(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	if err := q.Cancel("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestClearRemovesTerminalOnly(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 8, silentLogger())
+	q.Start()
+
+	tsk, _ := q.Enqueue([]string{"done"})
+	waitFor(t, func() bool {
+		got, _ := q.Get(tsk.ID)
+		return got.Status == StatusSucceeded
+	})
+	if n := q.Clear(); n != 1 {
+		t.Fatalf("expected 1 cleared, got %d", n)
+	}
+	if _, ok := q.Get(tsk.ID); ok {
+		t.Fatal("cleared task should be gone")
+	}
+}
+
+func TestStatsCountsPendingAndTotal(t *testing.T) {
+	block := make(chan struct{})
+	// One worker: the first task runs and blocks, the rest stay queued.
+	q := New(func(_ context.Context, args []string, _ io.Writer) error {
+		if args[0] == "blocker" {
+			<-block
+		}
+		return nil
+	}, 1, 8, silentLogger())
+	q.Start()
+
+	if _, err := q.Enqueue([]string{"blocker"}); err != nil {
+		t.Fatalf("enqueue blocker: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := q.Enqueue([]string{"waiting"}); err != nil {
+			t.Fatalf("enqueue waiting: %v", err)
+		}
+	}
+
+	// 3 enqueued, none terminal yet: 1 running + 2 queued.
+	waitFor(t, func() bool {
+		pending, total := q.Stats()
+		return pending == 3 && total == 3
+	})
+
+	close(block)
+
+	// Once all drain to terminal, nothing is pending; total stays until cleared.
+	waitFor(t, func() bool {
+		pending, _ := q.Stats()
+		return pending == 0
+	})
+	if _, total := q.Stats(); total != 3 {
+		t.Fatalf("expected total 3 after completion, got %d", total)
+	}
+}
+
 func TestFailedTaskRecordsError(t *testing.T) {
 	q := New(func(context.Context, []string, io.Writer) error {
 		return errors.New("boom")
@@ -240,62 +336,4 @@ func TestPanicInRunnerIsIsolated(t *testing.T) {
 		got, _ := q.Get(tsk2.ID)
 		return got.Status == StatusFailed
 	})
-}
-
-func TestBacklogFull(t *testing.T) {
-	block := make(chan struct{})
-	q := New(func(context.Context, []string, io.Writer) error {
-		<-block
-		return nil
-	}, 1, 1, silentLogger())
-	q.Start()
-
-	// First is picked up by the worker; second fills the backlog of 1; third overflows.
-	if _, err := q.Enqueue([]string{"1"}); err != nil {
-		t.Fatalf("enqueue 1: %v", err)
-	}
-	waitFor(t, func() bool { return len(q.pending) == 0 })
-	if _, err := q.Enqueue([]string{"2"}); err != nil {
-		t.Fatalf("enqueue 2: %v", err)
-	}
-	_, err := q.Enqueue([]string{"3"})
-	if !errors.Is(err, ErrQueueFull) {
-		t.Fatalf("expected ErrQueueFull, got %v", err)
-	}
-	close(block)
-}
-
-func TestClearRemovesTerminalOnly(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 8, silentLogger())
-	q.Start()
-
-	tsk, _ := q.Enqueue([]string{"done"})
-	waitFor(t, func() bool {
-		got, _ := q.Get(tsk.ID)
-		return got.Status == StatusSucceeded
-	})
-	if n := q.Clear(); n != 1 {
-		t.Fatalf("expected 1 cleared, got %d", n)
-	}
-	if _, ok := q.Get(tsk.ID); ok {
-		t.Fatal("cleared task should be gone")
-	}
-}
-
-func TestShutdownRejectsEnqueue(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
-	q.Start()
-	if err := q.Shutdown(context.Background()); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-	if _, err := q.Enqueue([]string{"x"}); !errors.Is(err, ErrClosed) {
-		t.Fatalf("expected ErrClosed, got %v", err)
-	}
-}
-
-func TestCancelUnknownTask(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
-	if err := q.Cancel("nope"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
 }

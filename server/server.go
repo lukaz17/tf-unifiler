@@ -17,13 +17,15 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tforceaio/tf-unifiler/task"
 )
+
+// ServiceName is the identity marker reported by the status endpoint.
+const ServiceName = "tf-unifiler"
 
 // TaskService is the subset of the task queue the HTTP layer depends on.
 type TaskService interface {
@@ -32,18 +34,20 @@ type TaskService interface {
 	List() []task.Task
 	Cancel(id string) error
 	Clear() int
+	Stats() (pending, total int)
 }
 
 // Server is a thin wrapper around http.Server with pre-registered routes.
 type Server struct {
 	engine *gin.Engine
 	http   *http.Server
+	info   StatusInfo
 	tasks  TaskService
 }
 
 // Entrypoint for creating a new Server listening on addr, backed by tasks.
-func New(addr string, tasks TaskService) *Server {
-	s := &Server{tasks: tasks}
+func New(addr string, info StatusInfo, tasks TaskService) *Server {
+	s := &Server{info: info, tasks: tasks}
 	s.engine = s.router()
 	s.http = &http.Server{
 		Addr:    addr,
@@ -79,9 +83,7 @@ func (s *Server) router() *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "ok")
-	})
+	r.GET("/status", s.handleStatus)
 	r.POST("/tasks", s.handleEnqueue)
 	r.GET("/tasks", s.handleList)
 	r.GET("/tasks/:id", s.handleGet)
@@ -90,66 +92,38 @@ func (s *Server) router() *gin.Engine {
 	return r
 }
 
-// Enqueue a new task.
-func (s *Server) handleEnqueue(c *gin.Context) {
-	var req enqueueRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	t, err := s.tasks.Enqueue(req.Args)
-	if err != nil {
-		switch {
-		case errors.Is(err, task.ErrEmptyArgs):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, task.ErrQueueFull):
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
-		case errors.Is(err, task.ErrClosed):
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-	c.JSON(http.StatusAccepted, t)
+// Report the server's identity and live task counts.
+func (s *Server) handleStatus(c *gin.Context) {
+	pending, total := s.tasks.Stats()
+	c.JSON(http.StatusOK, StatusResponse{
+		Service:      ServiceName,
+		Version:      s.info.Version,
+		WorkingDir:   s.info.WorkingDir,
+		ConfigDir:    s.info.ConfigDir,
+		Executable:   s.info.Executable,
+		Portable:     s.info.Portable,
+		PendingTasks: pending,
+		TotalTasks:   total,
+	})
 }
 
-// List all tasks.
-func (s *Server) handleList(c *gin.Context) {
-	c.JSON(http.StatusOK, s.tasks.List())
+// StatusInfo is the static server identity reported by the status endpoint.
+type StatusInfo struct {
+	Version    string
+	WorkingDir string
+	ConfigDir  string
+	Executable string
+	Portable   bool
 }
 
-// Get a single task by id.
-func (s *Server) handleGet(c *gin.Context) {
-	t, ok := s.tasks.Get(c.Param("id"))
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-		return
-	}
-	c.JSON(http.StatusOK, t)
-}
-
-// Cancel a task by id.
-func (s *Server) handleCancel(c *gin.Context) {
-	id := c.Param("id")
-	if err := s.tasks.Cancel(id); err != nil {
-		if errors.Is(err, task.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	t, _ := s.tasks.Get(id)
-	c.JSON(http.StatusOK, t)
-}
-
-// Clear all finished tasks.
-func (s *Server) handleClear(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"cleared": s.tasks.Clear()})
-}
-
-type enqueueRequest struct {
-	Args []string `json:"args"`
+// StatusResponse is the body returned by the status endpoint, shared by the client.
+type StatusResponse struct {
+	Service      string `json:"service"`
+	Version      string `json:"version"`
+	WorkingDir   string `json:"workingDir"`
+	ConfigDir    string `json:"configDir"`
+	Executable   string `json:"executable"`
+	Portable     bool   `json:"portable"`
+	PendingTasks int    `json:"pendingTasks"`
+	TotalTasks   int    `json:"totalTasks"`
 }

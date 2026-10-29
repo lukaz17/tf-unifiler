@@ -64,6 +64,13 @@ type entry struct {
 	finishedAt time.Time
 }
 
+// Return whether the entry reached a terminal status (succeeded, failed, or canceled).
+func (e *entry) isTerminal() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.status == StatusSucceeded || e.status == StatusFailed || e.status == StatusCanceled
+}
+
 // Return an immutable copy of the entry's current state.
 func (e *entry) snapshot() Task {
 	e.mu.Lock()
@@ -88,12 +95,6 @@ func (e *entry) snapshot() Task {
 	return t
 }
 
-func (e *entry) isTerminal() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.status == StatusSucceeded || e.status == StatusFailed || e.status == StatusCanceled
-}
-
 // boundedBuffer is a concurrency-safe byte sink capped at limit bytes.
 // Writes past the cap are dropped (but reported as written so the logger never errors) and marked as truncated. A zero limit means unbounded.
 type boundedBuffer struct {
@@ -103,6 +104,17 @@ type boundedBuffer struct {
 	truncated bool
 }
 
+// Return the buffered text, appending a truncation marker when writes were dropped.
+func (b *boundedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.truncated {
+		return string(b.buf) + "\n... output truncated ...\n"
+	}
+	return string(b.buf)
+}
+
+// Implement io.Writer: retain p up to the limit, mark the rest truncated, and report all of p as written.
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -123,13 +135,4 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		b.buf = append(b.buf, p...)
 	}
 	return len(p), nil
-}
-
-func (b *boundedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.truncated {
-		return string(b.buf) + "\n... output truncated ...\n"
-	}
-	return string(b.buf)
 }

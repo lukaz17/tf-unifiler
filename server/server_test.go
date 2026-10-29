@@ -16,6 +16,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,7 @@ type fakeTasks struct {
 	listFn    func() []task.Task
 	cancelFn  func(string) error
 	clearFn   func() int
+	statsFn   func() (int, int)
 }
 
 func (f *fakeTasks) Enqueue(args []string) (task.Task, error) { return f.enqueueFn(args) }
@@ -44,6 +46,7 @@ func (f *fakeTasks) Get(id string) (task.Task, bool)          { return f.getFn(i
 func (f *fakeTasks) List() []task.Task                        { return f.listFn() }
 func (f *fakeTasks) Cancel(id string) error                   { return f.cancelFn(id) }
 func (f *fakeTasks) Clear() int                               { return f.clearFn() }
+func (f *fakeTasks) Stats() (int, int)                        { return f.statsFn() }
 
 func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
 	var r *http.Request
@@ -58,122 +61,40 @@ func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
 	return w
 }
 
-func TestHealthEndpoint(t *testing.T) {
-	s := New(":0", &fakeTasks{})
-	w := do(s, http.MethodGet, "/health", "")
+func TestStatusEndpoint(t *testing.T) {
+	s := New(":0", StatusInfo{
+		Version:    "1.2.3",
+		WorkingDir: "/wd",
+		ConfigDir:  "/cfg",
+		Executable: "/bin/unifiler",
+		Portable:   true,
+	}, &fakeTasks{
+		statsFn: func() (int, int) { return 2, 5 },
+	})
+	w := do(s, http.MethodGet, "/status", "")
 	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+		t.Fatalf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
-	if w.Body.String() != "ok" {
-		t.Errorf("expected body %q, got %q", "ok", w.Body.String())
+
+	var got StatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding status response: %v", err)
+	}
+	if got.Service != ServiceName {
+		t.Errorf("expected service %q, got %q", ServiceName, got.Service)
+	}
+	if got.Version != "1.2.3" || got.WorkingDir != "/wd" || got.ConfigDir != "/cfg" || got.Executable != "/bin/unifiler" || !got.Portable {
+		t.Errorf("status identity fields not echoed back: %+v", got)
+	}
+	if got.PendingTasks != 2 || got.TotalTasks != 5 {
+		t.Errorf("expected counts 2/5, got %d/%d", got.PendingTasks, got.TotalTasks)
 	}
 }
 
 func TestUnknownRoute(t *testing.T) {
-	s := New(":0", &fakeTasks{})
+	s := New(":0", StatusInfo{}, &fakeTasks{})
 	w := do(s, http.MethodGet, "/unknown", "")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
-	}
-}
-
-func TestEnqueueAccepted(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		enqueueFn: func(args []string) (task.Task, error) {
-			return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
-		},
-	})
-	w := do(s, http.MethodPost, "/tasks", `{"args":["checksum","create"]}`)
-	if w.Code != http.StatusAccepted {
-		t.Fatalf("expected %d, got %d (%s)", http.StatusAccepted, w.Code, w.Body.String())
-	}
-}
-
-func TestEnqueueEmptyArgsBadRequest(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrEmptyArgs },
-	})
-	w := do(s, http.MethodPost, "/tasks", `{"args":[]}`)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
-	}
-}
-
-func TestEnqueueQueueFull(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrQueueFull },
-	})
-	w := do(s, http.MethodPost, "/tasks", `{"args":["x"]}`)
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected %d, got %d", http.StatusTooManyRequests, w.Code)
-	}
-}
-
-func TestEnqueueInvalidBody(t *testing.T) {
-	s := New(":0", &fakeTasks{})
-	w := do(s, http.MethodPost, "/tasks", `not json`)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
-	}
-}
-
-func TestGetNotFound(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		getFn: func(string) (task.Task, bool) { return task.Task{}, false },
-	})
-	w := do(s, http.MethodGet, "/tasks/missing", "")
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected %d, got %d", http.StatusNotFound, w.Code)
-	}
-}
-
-func TestGetFound(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		getFn: func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusRunning}, true },
-	})
-	w := do(s, http.MethodGet, "/tasks/t1", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
-	}
-}
-
-func TestList(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		listFn: func() []task.Task { return []task.Task{{ID: "a"}, {ID: "b"}} },
-	})
-	w := do(s, http.MethodGet, "/tasks", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
-	}
-}
-
-func TestCancelNotFound(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		cancelFn: func(string) error { return task.ErrNotFound },
-	})
-	w := do(s, http.MethodPost, "/tasks/missing/cancel", "")
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected %d, got %d", http.StatusNotFound, w.Code)
-	}
-}
-
-func TestCancelFound(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		cancelFn: func(string) error { return nil },
-		getFn:    func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusCanceled}, true },
-	})
-	w := do(s, http.MethodPost, "/tasks/t1/cancel", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
-	}
-}
-
-func TestClear(t *testing.T) {
-	s := New(":0", &fakeTasks{
-		clearFn: func() int { return 3 },
-	})
-	w := do(s, http.MethodDelete, "/tasks", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/engine"
+	"github.com/tforceaio/tf-unifiler/filesys"
 	"github.com/tforceaio/tf-unifiler/server"
 	"github.com/tforceaio/tf-unifiler/task"
 )
@@ -66,7 +67,7 @@ func (m *ServeModule) Start() error {
 	m.queue = task.New(runner, m.cfg.Server.Concurrency, m.cfg.Server.Backlog, m.ctrl.Logger)
 	m.queue.Start()
 
-	m.httpSrv = server.New(addr, m.queue)
+	m.httpSrv = server.New(addr, m.statusInfo(), m.queue)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -89,6 +90,21 @@ func (m *ServeModule) Start() error {
 			return err
 		}
 		return queueErr
+	}
+}
+
+// Gather the static identity reported by the server's status endpoint.
+func (m *ServeModule) statusInfo() server.StatusInfo {
+	pwd, _ := os.Getwd()
+	pwd, _ = filesys.GetAbsPath(pwd)
+	exec, _ := os.Executable()
+	exec, _ = filesys.GetAbsPath(exec)
+	return server.StatusInfo{
+		Version:    engine.Version(),
+		WorkingDir: pwd,
+		ConfigDir:  m.cfg.ConfigDir,
+		Executable: exec,
+		Portable:   m.cfg.IsPortable,
 	}
 }
 

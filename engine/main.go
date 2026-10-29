@@ -130,6 +130,11 @@ func getTaskScopedController(ctx context.Context) *Controller {
 	return rt.base.fork(rt.out)
 }
 
+// Version returns the program's version string, as reported by the root command.
+func Version() string {
+	return version()
+}
+
 // Return version string of the program.
 func version() string {
 	originDate := time.Date(2024, time.August, 13, 0, 0, 0, 0, time.UTC)
