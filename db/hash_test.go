@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package db
 
@@ -79,11 +78,34 @@ func TestSaveHashes(t *testing.T) {
 			t.Errorf("hash2 mismatch. expected %v actual %v", alteredHash.Hash(), hash2)
 		}
 	})
+	t.Run("oversize_hash", func(t *testing.T) {
+		// 5 GiB, above the uint32 limit, to ensure large file sizes are not truncated.
+		oversizeHash := testingHash{
+			"apocalypse.mkv",
+			5368709120,
+			"6de8a2227cb2bcfecfa87538f9fd8663",
+			"7b6be8974cd67afcfbe660528c85c12fa5b1ba01",
+			"3eddef97785aaa6b947b2b35bc765a2c8924300e40f4118781d1f60aff4ef3eb",
+			"aedbe4b29a028509ad2028eaede6e8616fecb28ddd30de97f3f17c85a1bf8dfa8b96383c9e923e4becf67a314cb1f097275b1d539339c71fb25f6e961473b23a",
+		}
+		ctx := getAndReseedHashDB("SaveHashes")
+		err := ctx.SaveHash(oversizeHash.Hash())
+		if err != nil {
+			t.Error(err)
+		}
+		saved, err := ctx.GetHashBySha256(oversizeHash.Sha256)
+		if err != nil {
+			t.Error(err)
+		}
+		if saved == nil || saved.Size != oversizeHash.Size {
+			t.Errorf("oversize size truncated. expected %v actual %v", oversizeHash.Size, saved.Size)
+		}
+	})
 }
 
 type testingHash struct {
 	FileName string
-	Size     uint32
+	Size     int64
 	Md5      string
 	Sha1     string
 	Sha256   string

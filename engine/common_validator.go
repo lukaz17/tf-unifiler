@@ -36,7 +36,7 @@ func validateArchiveFormat(format string) error {
 	return fmt.Errorf("unknown format: %s", format)
 }
 
-// Check a anchive name is available for create or update.
+// Check an archive name is available for create or update.
 func validateArchiveName(ctx *db.DbContext, archiveName string, update bool) error {
 	existingArchive, err := ctx.GetArchiveByName(archiveName)
 	if err != nil {

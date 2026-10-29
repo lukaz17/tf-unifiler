@@ -62,8 +62,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
-// Build the route table served by this Server. Callable again to rebuild after
-// mutating routes.
+// Build the route table served by this Server.
 func (s *Server) router() *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
 	r := gin.New()

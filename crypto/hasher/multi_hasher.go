@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package hasher
 
@@ -36,7 +35,7 @@ import (
 // HashResult stores the checksum of a file for specific algorithm.
 type HashResult struct {
 	Path      string
-	Size      int
+	Size      int64
 	Algorithm string
 	Hash      []byte
 }
@@ -98,25 +97,27 @@ func Hash(fPath string, algorithms []string) ([]*HashResult, error) {
 	for {
 		nread, eread := fHandle.Read(buf)
 		if nread > 0 {
-			nwrite := 0
-			var ewrite error = nil
+			var ewrite error
 			for _, hasher := range hashers {
-				nwrite, ewrite = hasher.Write(buf[0:nread])
-			}
-			if nwrite < 0 || nread < nwrite {
-				nwrite = 0
-				if ewrite == nil {
-					ewrite = errors.New("cannot write to hasher")
+				nwrite, e := hasher.Write(buf[0:nread])
+				if nwrite < 0 || nread < nwrite {
+					if e == nil {
+						e = errors.New("cannot write to hasher")
+					}
+				}
+				if e != nil {
+					ewrite = e
+					break
+				}
+				if nread != nwrite {
+					ewrite = fmt.Errorf("read and write data mismatch %d %d", nread, nwrite)
+					break
 				}
 			}
-			written += int64(nwrite)
+			written += int64(nread)
 			p.Progress(written)
 			if ewrite != nil {
 				err = ewrite
-				break
-			}
-			if nread != nwrite {
-				err = fmt.Errorf("read and write data mismatch %d %d", nread, nwrite)
 				break
 			}
 		}
@@ -132,7 +133,7 @@ func Hash(fPath string, algorithms []string) ([]*HashResult, error) {
 	}
 
 	for i, h := range hashers {
-		results[i].Size = int(written)
+		results[i].Size = written
 		results[i].Hash = h.Sum(nil)
 	}
 	return results, nil
@@ -204,7 +205,7 @@ func hashFile(fPath string, hasher hash.Hash, algo string) (*HashResult, error) 
 
 	result := &HashResult{
 		Path:      fPath,
-		Size:      int(written),
+		Size:      written,
 		Algorithm: algo,
 		Hash:      hasher.Sum(nil),
 	}

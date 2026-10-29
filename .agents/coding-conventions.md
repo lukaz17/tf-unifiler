@@ -128,7 +128,7 @@ When a language's established idiom contradicts a principle below, follow the id
 - Refer to [Go doc conventions](https://go.dev/doc/comment) for specific convention.
 - State a package's purpose once, in its doc comment; do not restate it per file.
 <!-- Project-specific / Go-Comments -->
-- Function comment is an exception, it start with a verb and summary the intent of the function.
+- Function comment is an exception, it start with a verb and summarize the intent of the function.
 
 ### Errors
 

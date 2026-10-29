@@ -110,7 +110,7 @@ func IsFileUnsafe(fPath string) bool {
 
 func IsFileExist(fPath string) bool {
 	fileInfo, err := os.Stat(fPath)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !fileInfo.IsDir()

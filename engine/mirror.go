@@ -19,7 +19,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/rs/zerolog"
@@ -77,7 +76,7 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 
 	missingItems := []string{}
 	for _, l := range items {
-		cachePath := path.Join(workspaceRoot, l.Hash)
+		cachePath := filepath.Join(workspaceRoot, l.Hash)
 		if !filesys.IsFileExist(cachePath) {
 			missingItems = append(missingItems, l.Hash)
 		}
@@ -95,7 +94,7 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	targetRoot := targetDir
 	if targetRoot == "" {
 		checksumPath, _ := filesys.GetAbsPath(checksumFile)
-		targetRoot, _ = path.Split(checksumPath)
+		targetRoot, _ = filepath.Split(checksumPath)
 	} else {
 		targetRoot, _ = filesys.GetAbsPath(targetDir)
 	}
@@ -103,8 +102,8 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 		return errors.New("a file with same name with target root existed")
 	}
 	for _, l := range items {
-		cachePath := path.Join(workspaceRoot, l.Hash)
-		targetPath := opx.Ternary(filesys.IsAbsPath(l.Path), l.Path, path.Join(targetRoot, l.Path))
+		cachePath := filepath.Join(workspaceRoot, l.Hash)
+		targetPath := opx.Ternary(filesys.IsAbsPath(l.Path), l.Path, filepath.Join(targetRoot, l.Path))
 		err := filesys.CreateHardlink(cachePath, targetPath)
 		if err != nil {
 			m.logger.Info().
@@ -147,7 +146,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 		m.logger.Info().
 			Str("algo", "sha256").
 			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
 
@@ -161,7 +160,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 	}
 	for _, r := range fhResults {
 		name := hex.EncodeToString(r.Hashes[0].Hash)
-		cachePath := path.Join(workspaceRoot, name)
+		cachePath := filepath.Join(workspaceRoot, name)
 		if filesys.IsFileExist(cachePath) {
 			m.logger.Info().
 				Str("src", filesys.NormalizePath(r.Entry.AbsolutePath, true)).
@@ -203,7 +202,7 @@ func (m *MirrorModule) logError(err error) error {
 	return err
 }
 
-// Return directory path to store Mirror module's ouputs inside Unifiler workspace.
+// Return directory path to store Mirror module's outputs inside Unifiler workspace.
 func MirrorWorkspaceRoot(workspaceDir string) string {
 	return filepath.Join(workspaceDir, "mirror")
 }

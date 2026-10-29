@@ -36,24 +36,24 @@ const (
 
 // ProcessStatusMsg is used for updating state of ProcessStatus component.
 type ProcessStatusMsg struct {
-	action         string
-	item           string
-	itemPercent    float64
-	totalInfinited bool
-	totalPercent   float64
-	errors         []string
+	action        string
+	item          string
+	itemPercent   float64
+	totalInfinite bool
+	totalPercent  float64
+	errors        []string
 }
 
 // ProcessStatus is the Bubble Tea component that renders the 4-line progress UI.
 type ProcessStatus struct {
 	allowInterrupt bool
 
-	action         string
-	item           string
-	itemPercent    float64
-	totalPercent   float64
-	totalInfinited bool
-	errors         []string
+	action        string
+	item          string
+	itemPercent   float64
+	totalPercent  float64
+	totalInfinite bool
+	errors        []string
 
 	itemProgress  progress.Model
 	itemSpinner   spinner.Model
@@ -139,7 +139,7 @@ func (m ProcessStatus) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.action = msg.action
 		m.item = msg.item
 		m.itemPercent = msg.itemPercent
-		m.totalInfinited = msg.totalInfinited
+		m.totalInfinite = msg.totalInfinite
 		m.totalPercent = msg.totalPercent
 		m.errors = msg.errors
 
@@ -172,7 +172,7 @@ func (m ProcessStatus) View() tea.View {
 	sb.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Action: "), actionStyle.Render(opx.Ternary(m.action == "", "-", m.action))))
 	sb.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Item:   "), itemStyle.Render(opx.Ternary(m.item == "", "-", m.item))))
 	sb.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render(""), m.itemProgress.ViewAs(m.itemPercent)))
-	if m.totalInfinited {
+	if m.totalInfinite {
 		if m.totalPercent >= 1 {
 			sb.WriteString(fmt.Sprintf("%s\n", labelStyle.Render("Done.")))
 		} else {

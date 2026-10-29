@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //go:build windows
 
@@ -58,7 +57,7 @@ func SetArchiveAttribute(path string, enable bool) error {
 	return setFileAttribute(path, windows.FILE_ATTRIBUTE_ARCHIVE, enable)
 }
 
-// Set Created time, Access time, Modified time of time of a file or folder.
+// Set Created time, Access time, Modified time of a file or folder.
 func SetTime(path string, ctime, atime, mtime time.Time) error {
 	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {

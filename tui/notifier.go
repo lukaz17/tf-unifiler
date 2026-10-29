@@ -1,18 +1,17 @@
-// Copyright (C) 2025 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2025  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package tui
 
@@ -161,7 +160,7 @@ func phaseFromPID(pid string) string {
 	return pid
 }
 
-// Distach patch the message to paired Bubbletea program.
+// Dispatch the message to paired Bubbletea program.
 func (bn *BubbleteaNotifier) dispatch() {
 	i := bn.i
 	if i.teaProgram == nil {
@@ -170,12 +169,12 @@ func (bn *BubbleteaNotifier) dispatch() {
 	errsCopy := make([]string, len(i.errors))
 	copy(errsCopy, i.errors)
 	msg := ProcessStatusMsg{
-		action:         i.action,
-		item:           i.item,
-		itemPercent:    i.itemPercent,
-		totalInfinited: i.itemTotal <= 0,
-		totalPercent:   i.totalPercent,
-		errors:         errsCopy,
+		action:        i.action,
+		item:          i.item,
+		itemPercent:   i.itemPercent,
+		totalInfinite: i.itemTotal <= 0,
+		totalPercent:  i.totalPercent,
+		errors:        errsCopy,
 	}
 	i.teaProgram.Send(msg)
 }
