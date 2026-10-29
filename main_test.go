@@ -21,10 +21,10 @@ import (
 	"github.com/tforceaio/tf-unifiler/engine"
 )
 
-// The CLI root is the engine's non-serve tree plus the serve command owned by this package.
+// The CLI root is the engine's non-serve tree plus the serve command and the
+// client-only --queue flag that this package adds in buildRootCmd.
 func TestRootCommandWiring(t *testing.T) {
-	root := engine.BuildRootCmd()
-	root.AddCommand(ServeCmd())
+	root := buildRootCmd()
 
 	want := map[string]bool{
 		"checksum": false,
@@ -42,6 +42,10 @@ func TestRootCommandWiring(t *testing.T) {
 		if !found {
 			t.Errorf("root command missing subcommand %q", name)
 		}
+	}
+
+	if root.PersistentFlags().Lookup(queueFlagName) == nil {
+		t.Errorf("root command missing persistent --%s flag", queueFlagName)
 	}
 }
 

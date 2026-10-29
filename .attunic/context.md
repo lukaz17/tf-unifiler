@@ -56,18 +56,22 @@ List of important folders, files and their roles in the project:
 ├── internal/           # non-importable internals
 │   └── nullable/       # forked nullable types (bool, int), from github.com/tee8z/nullable
 ├── server/             # lightweight HTTP server for serving RPC
-├── task/               # in-memory task queue for the HTTP server
+├── task/               # in-memory task queue for the RPC
 ├── tui/                # terminal UI components based on Bubbletea v2
 ├── xlib/               # small shared utility helpers
 ├── .copier-answers.yml # project Copier answers
 ├── .editorconfig       # EditorConfig configuration
 ├── .gitignore          # git ignore patterns
+├── AGENTS.md           # project AI agent entry point
+├── CLAUDE.md           # project Claude Code entry point
 ├── COPYING             # GPL-3.0 license text
 ├── COPYING.LESSER      # LGPL-3.0 license text
 ├── README.md           # project overview
+├── forward.go          # RPC dispatcher
 ├── go.mod              # Go module definition
 ├── go.sum              # Go module checksums
-└── main.go             # main program entrypoint
+├── main.go             # main program entry point
+└── serve.go            # RPC server entry point
 ```
 
 ## Layer Dependencies
@@ -126,6 +130,7 @@ Facts about the project which have been confirmed. They may look wrong or contra
 | Fact | Reason |
 |------|--------|
 <!-- Project-specific / Confirmed Facts -->
+| No CLI subcommand defines its own `PersistentPreRun`/`PersistentPreRunE`; the root command's is the only one. | `isDeferred` ([forward.go](../forward.go)) detects and validates `--queue` via a `PersistentPreRunE` on the root. Cobra runs only the *nearest* `PersistentPreRun(E)` in a command's ancestry (unless `cobra.EnableTraverseRunHooks` is set), so one on any subcommand would shadow the root's and silently break `--queue` forwarding and up-front validation for that command. |
 
 ## Project-specific
 
