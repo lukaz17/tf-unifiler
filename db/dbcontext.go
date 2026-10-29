@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-var SchemaVersion = 2
+const SchemaVersion = 2
 
 // DbContext encapsulate all actions related to reading from and writing to database.
 type DbContext struct {
@@ -67,8 +67,13 @@ func Connect(uri string) (*DbContext, error) {
 	return c, nil
 }
 
-// Disconnect from database. Currently used for Gorm.
-func (c *DbContext) Disconnect() {
+// Disconnect from database, releasing the underlying connection.
+func (c *DbContext) Disconnect() error {
+	sqlDB, err := c.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 // Migrate database schema to match database models.
