@@ -53,7 +53,7 @@ func NewMetadataModule(c *Controller, cmdName string) *MetadataModule {
 
 // Scan and compute hashes using common algorithms (CRC32, MD5, SHA-1, SHA-256, SHA-512) for inputs (files/folders)
 // and add them to collection.
-// Mark them as obseleted if delete is true.
+// Mark them as obsoleted if delete is true.
 func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string, delete bool, archiveName string, update bool) error {
 	if err := validateWorkspace(workspaceDir); err != nil {
 		return err
@@ -129,7 +129,7 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 		m.logger.Info().
 			Strs("algos", algos).
 			Str("path", filesys.NormalizePath(entryPath, true)).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 		fileMultiHash := &core.FileMultiHash{
 			Crc32:     r.Hashes[0].Hash,
@@ -137,7 +137,7 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 			Sha1:      r.Hashes[2].Hash,
 			Sha256:    r.Hashes[3].Hash,
 			Sha512:    r.Hashes[4].Hash,
-			Size:      uint32(r.Hashes[0].Size),
+			Size:      r.Hashes[0].Size,
 			Directory: filepath.Dir(r.Entry.AbsolutePath),
 			FileName:  r.Entry.Name,
 		}
@@ -199,7 +199,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
 			Str("sha1", hex.EncodeToString(r.Hashes[2].Hash)).
 			Str("sha256", sha256).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 		metadatas, err := ctx.GetHashesInSets(collections, []string{sha256}, onlyObsoleted)
 		if err != nil {
@@ -494,7 +494,7 @@ func (m *MetadataModule) saveIResults(ctx *db.DbContext, hResults []*core.FileMu
 	return err
 }
 
-// Return database path to store Metadata module's ouputs inside Unifiler workspace.
+// Return database path to store Metadata module's outputs inside Unifiler workspace.
 func MetadataWorkspaceDatabase(workspaceDir string) string {
 	return filepath.Join(workspaceDir, "metadata.db")
 }

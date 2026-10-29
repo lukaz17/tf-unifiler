@@ -80,7 +80,7 @@ func (m *FileModule) Hash(inputs []string) error {
 			Str("sha1", hex.EncodeToString(r.Hashes[2].Hash)).
 			Str("sha256", hex.EncodeToString(r.Hashes[3].Hash)).
 			Str("sha512", hex.EncodeToString(r.Hashes[4].Hash)).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
 
@@ -168,18 +168,9 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	if threads > 0 {
 		threadNum = nullable.FromInt(threads)
 	}
-	tuiMode := false
-	packResults, err := packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, tuiMode)
+	_, err = packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, false)
 	if err != nil {
 		return err
-	}
-
-	if tuiMode {
-		for _, path := range packResults {
-			m.logger.Info().
-				Str("archive", path).
-				Msg("Packed files.")
-		}
 	}
 
 	return nil
@@ -195,26 +186,12 @@ func (m *FileModule) Rename(inputs []string, preset string) error {
 		Str("preset", preset).
 		Msg("Start renaming file.")
 
-	if preset == "crc32" {
-		return m.renameByHash(inputs, preset, "6372633332_")
+	switch preset {
+	case "crc32", "md4", "md5", "sha1", "sha256", "sha512":
+		return m.renameByHash(inputs, preset, hex.EncodeToString([]byte(preset))+"_")
+	default:
+		return errors.New("preset is invalid")
 	}
-	if preset == "md4" {
-		return m.renameByHash(inputs, preset, "6d6434_")
-	}
-	if preset == "md5" {
-		return m.renameByHash(inputs, preset, "6d6435_")
-	}
-	if preset == "sha1" {
-		return m.renameByHash(inputs, preset, "73686131_")
-	}
-	if preset == "sha256" {
-		return m.renameByHash(inputs, preset, "736861323536_")
-	}
-	if preset == "sha512" {
-		return m.renameByHash(inputs, preset, "736861353132_")
-	}
-
-	return errors.New("preset is invalid")
 }
 
 // Rename files using hashes of their contents.
@@ -228,7 +205,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 		m.logger.Info().
 			Str("algo", algo).
 			Str("path", filesys.NormalizePath(r.Entry.RelativePath, true)).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
 

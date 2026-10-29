@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"path"
+	"path/filepath"
 	"strconv"
 
 	"github.com/rs/zerolog"
@@ -83,7 +83,7 @@ func (m *VideoModule) Info(file string) error {
 	return nil
 }
 
-// Take screenshots for videos file from offet of the video file, for a limit duration, every interval.
+// Take screenshots for videos file from offset of the video file, for a limit duration, every interval.
 // All time are in seconds. Quality factor range from 1-100.
 func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64, quality int, outputDir string) error {
 	if err := validateInput(file, "input"); err != nil {
@@ -105,7 +105,7 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 		Msg("Extracting frames for video file.")
 
 	inputFile, _ := filesys.CreateEntry(file)
-	outputRoot := opx.Ternary(outputDir == "", path.Dir(inputFile.AbsolutePath), outputDir)
+	outputRoot := opx.Ternary(outputDir == "", filepath.Dir(inputFile.AbsolutePath), outputDir)
 	if filesys.IsFileExist(outputRoot) {
 		return errors.New("a file with same name with target root existed")
 	}
@@ -122,7 +122,7 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 	return nil
 }
 
-// Return timecode string from timeMs in miliseconds.
+// Return timecode string from timeMs in milliseconds.
 func (m *VideoModule) convertSecondToTimeCode(timeMs *big.Int) string {
 	hr := new(big.Int).Div(timeMs, big.NewInt(3600000))
 	timeMs = new(big.Int).Mod(timeMs, big.NewInt(3600000))
@@ -134,7 +134,7 @@ func (m *VideoModule) convertSecondToTimeCode(timeMs *big.Int) string {
 	return fmt.Sprintf("%d_%02d_%02d_%03d", hr.Int64(), mm.Int64(), sc.Int64(), ms.Int64())
 }
 
-// Return offset/interval paramteters for video with lengthMs in miliseconds.
+// Return offset/interval parameters for video with lengthMs in milliseconds.
 func (m *VideoModule) defaultScreenshotParameter(lengthMs *big.Int) (*big.Int, *big.Int) {
 	defaults := []struct {
 		duration *big.Int
@@ -164,7 +164,16 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	if err != nil {
 		return 0, err
 	}
-	fileMI, _ := exec.DecodeMediaInfoJson(stdout)
+	fileMI, err := exec.DecodeMediaInfoJson(stdout)
+	if err != nil {
+		return 0, err
+	}
+	if len(fileMI.Media.GeneralTracks) == 0 {
+		return 0, errors.New("media info has no general track")
+	}
+	if len(fileMI.Media.VideoTracks) == 0 {
+		return 0, errors.New("media info has no video track")
+	}
 
 	duration, err := strconv.ParseFloat(fileMI.Media.GeneralTracks[0].Duration, 64)
 	if err != nil {
@@ -203,7 +212,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 	defer p.Done()
 	p.Total(limitMs.Int64())
 	qualityFactor := opx.Ternary(quality == 0, 1, quality)
-	outputFilenameFormat := opx.Ternary(quality == 1, path.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), path.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
+	outputFilenameFormat := opx.Ternary(quality == 1, filepath.Join(outputRoot, inputFile.Name+"_%s"+".jpg"), filepath.Join(outputRoot, inputFile.Name+"_%s_q%d"+".jpg"))
 	count := uint64(0)
 	for t := offsetMs; t.Cmp(limitMs) <= 0; t = new(big.Int).Add(t, intervalMs) {
 		if err := ctx.Err(); err != nil {
@@ -217,7 +226,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 			OutputFile:       outFile,
 			OutputFrameCount: nullable.FromInt(1),
 			QualityFactor:    nullable.FromInt(qualityFactor),
-			OverwiteOutput:   true,
+			OverwriteOutput:  true,
 		}
 		if isHDR {
 			ffmOptions.VideoFilter = vfHDR

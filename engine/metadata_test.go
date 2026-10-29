@@ -121,7 +121,7 @@ func bytesFromHex(hexStr string) stdx.Bytes {
 	return stdx.Bytes(buf)
 }
 
-func createFileMultiHash(fileName string, size uint32, md5, sha1, sha256, sha512 string) *core.FileMultiHash {
+func createFileMultiHash(fileName string, size int64, md5, sha1, sha256, sha512 string) *core.FileMultiHash {
 	return &core.FileMultiHash{
 		Md5:      bytesFromHex(md5),
 		Sha1:     bytesFromHex(sha1),

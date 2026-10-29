@@ -51,7 +51,9 @@ func (m *ConfigModule) Export(outputPath string, diffOnly bool) error {
 		Msg("Start export configuration.")
 
 	k := koanf.New(".")
-	k.Load(structs.Provider(m.cfg, "koanf"), nil)
+	if err := k.Load(structs.Provider(m.cfg, "koanf"), nil); err != nil {
+		return err
+	}
 
 	if diffOnly {
 		defaults, err := config.DefaultConfig()
@@ -64,7 +66,10 @@ func (m *ConfigModule) Export(outputPath string, diffOnly bool) error {
 			}
 		}
 	}
-	data, _ := k.Marshal(yaml.Parser())
+	data, err := k.Marshal(yaml.Parser())
+	if err != nil {
+		return err
+	}
 	if outputPath == "" {
 		fmt.Print(string(data))
 	} else {
@@ -86,7 +91,9 @@ func (m *ConfigModule) Get(key string) error {
 	}
 
 	k := koanf.New(".")
-	k.Load(structs.Provider(m.cfg, "koanf"), nil)
+	if err := k.Load(structs.Provider(m.cfg, "koanf"), nil); err != nil {
+		return err
+	}
 
 	if val := k.Get(key); val != nil {
 		fmt.Printf("%v\n", val)
@@ -114,7 +121,10 @@ func (m *ConfigModule) Set(key, value string) error {
 	if err != nil {
 		return err
 	}
-	data, _ := k.Marshal(yaml.Parser())
+	data, err := k.Marshal(yaml.Parser())
+	if err != nil {
+		return err
+	}
 	err = m.writeFile(m.cfg.ConfigFile, data)
 	if err != nil {
 		return err
@@ -167,8 +177,8 @@ func ConfigCmd() *cobra.Command {
 			return m.logError(m.Export(f.Output, f.Diff))
 		},
 	}
-	exportCmd.Flags().BoolP("diff", "d", false, "Export diffrences from default configuration only.")
-	exportCmd.Flags().StringP("output", "o", "", "Output file path. Empty will output ot stdout.")
+	exportCmd.Flags().BoolP("diff", "d", false, "Export differences from default configuration only.")
+	exportCmd.Flags().StringP("output", "o", "", "Output file path. Empty will output to stdout.")
 
 	getCmd := &cobra.Command{
 		Use:   "get [key]",

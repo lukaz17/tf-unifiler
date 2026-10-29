@@ -66,7 +66,7 @@ func (m *ChecksumModule) Create(inputs []string, outDir string, algorithms []str
 		m.logger.Info().
 			Strs("algos", algorithms).
 			Str("file", filesys.NormalizePath(r.Entry.RelativePath, true)).
-			Int("size", r.Hashes[0].Size).
+			Int64("size", r.Hashes[0].Size).
 			Msg("Hashed file.")
 	}
 
