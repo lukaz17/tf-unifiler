@@ -16,8 +16,10 @@
 package diag
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -33,33 +35,62 @@ const (
 	logFileMaxAge    = 28 // maximum days to retain old log files.
 )
 
-// Entrypoint for creating a ZeroLog logger instance.
-func NewLogger(cfg *config.RootConfig, useFS bool) (zerolog.Logger, *lumberjack.Logger, error) {
+// syncLevelWriter serializes writes to the wrapped level writer so a shared base logger stays data-race free when used from multiple goroutines.
+type syncLevelWriter struct {
+	mu sync.Mutex
+	w  zerolog.LevelWriter
+}
+
+func (s *syncLevelWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
+}
+
+func (s *syncLevelWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.WriteLevel(level, p)
+}
+
+// Return a new thread-safe log writer instance (console plus rotating file when useFS is true).
+func NewLogWriter(cfg *config.RootConfig, useFS bool) (zerolog.LevelWriter, *lumberjack.Logger, error) {
 	zerolog.SetGlobalLevel(resolveLevel(cfg))
 
-	colorSupported := tui.IsTTY()
-	consoleWriter := &zerolog.FilteredLevelWriter{
-		Writer: zerolog.LevelWriterAdapter{
-			Writer: zerolog.ConsoleWriter{Out: os.Stdout, NoColor: !colorSupported, TimeFormat: time.DateTime},
-		},
-		Level: zerolog.TraceLevel,
-	}
+	consoleWriter := ConsoleLevelWriter(os.Stdout, tui.IsTTY())
 
 	logFile, err := initLogFile(useFS, cfg.ConfigDir)
 	if logFile == nil {
-		consoleLogger := zerolog.New(consoleWriter).With().Timestamp().Logger()
-		return consoleLogger, nil, err
+		return &syncLevelWriter{w: consoleWriter}, nil, err
 	}
 
-	fileWriter := &zerolog.FilteredLevelWriter{
+	multiWriter := zerolog.MultiLevelWriter(consoleWriter, FileLevelWriter(logFile))
+	return &syncLevelWriter{w: multiWriter}, logFile, nil
+}
+
+// Build a logger from a pre-composed writer.
+func NewLoggerFromWriter(w zerolog.LevelWriter) zerolog.Logger {
+	return zerolog.New(w).With().Timestamp().Logger()
+}
+
+// Wrap a human-readable console writer around out as a zerolog level writer.
+func ConsoleLevelWriter(out io.Writer, color bool) zerolog.LevelWriter {
+	return &zerolog.FilteredLevelWriter{
 		Writer: zerolog.LevelWriterAdapter{
-			Writer: logFile,
+			Writer: zerolog.ConsoleWriter{Out: out, NoColor: !color, TimeFormat: time.DateTime},
 		},
 		Level: zerolog.TraceLevel,
 	}
-	multiWriter := zerolog.MultiLevelWriter(consoleWriter, fileWriter)
-	logger := zerolog.New(multiWriter).With().Timestamp().Logger()
-	return logger, logFile, nil
+}
+
+// Wrap a raw writer as a zerolog level writer.
+func FileLevelWriter(w io.Writer) zerolog.LevelWriter {
+	return &zerolog.FilteredLevelWriter{
+		Writer: zerolog.LevelWriterAdapter{
+			Writer: w,
+		},
+		Level: zerolog.TraceLevel,
+	}
 }
 
 // Create and return rotating log file writer only if useFS is true.

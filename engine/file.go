@@ -283,7 +283,7 @@ func FileCmd() *cobra.Command {
 		Use:   "hash <input>...",
 		Short: "Compute and print hashes for files.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "hash")
@@ -296,7 +296,7 @@ func FileCmd() *cobra.Command {
 		Use:   "pack <input>...",
 		Short: "Pack files into an archive.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "pack")
@@ -319,7 +319,7 @@ func FileCmd() *cobra.Command {
 		Use:   "rename <input>...",
 		Short: "Multi-rename files and directories.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "rename")

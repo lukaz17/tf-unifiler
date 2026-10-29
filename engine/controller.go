@@ -16,6 +16,8 @@
 package engine
 
 import (
+	"io"
+
 	"github.com/rs/zerolog"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/crypto/hasher"
@@ -26,8 +28,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// Controller is the entrypoint for working with application configurations and
-// loggings.
+// Controller is the entrypoint for working with application configurations and loggings.
 type Controller struct {
 	Config   *config.RootConfig
 	Logger   zerolog.Logger
@@ -40,7 +41,8 @@ type Controller struct {
 // useFS will instruct this function to read configurations and create log file.
 func NewController(useFS bool) *Controller {
 	cfg, err := config.InitKoanf(useFS)
-	logger, logFile, err2 := diag.NewLogger(cfg, useFS)
+	writer, logFile, err2 := diag.NewLogWriter(cfg, useFS)
+	logger := diag.NewLoggerFromWriter(writer)
 	if err != nil {
 		logger.Err(err).Msg("error initializing config")
 	}
@@ -78,4 +80,19 @@ func (c *Controller) CommandLogger(module, command string) zerolog.Logger {
 // Get a ZeroLog logger instance for module from root instance.
 func (c *Controller) ModuleLogger(module string) zerolog.Logger {
 	return c.Logger.With().Str("module", module).Logger()
+}
+
+// Derive a task-scoped Controller for running a single task, it shares this Controller's rotating log file but tees log output into the per-task sink out for capture.
+func (c *Controller) fork(out io.Writer) *Controller {
+	sink := diag.ConsoleLevelWriter(out, false)
+	var writer zerolog.LevelWriter = sink
+	if c.logFile != nil {
+		writer = zerolog.MultiLevelWriter(diag.FileLevelWriter(c.logFile), sink)
+	}
+	return &Controller{
+		Config:   c.Config,
+		Logger:   diag.NewLoggerFromWriter(writer),
+		Notifier: c.Notifier,
+		logFile:  nil,
+	}
 }

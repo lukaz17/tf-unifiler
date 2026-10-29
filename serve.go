@@ -13,11 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package engine
+package main
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,33 +27,46 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
+	"github.com/tforceaio/tf-unifiler/engine"
 	"github.com/tforceaio/tf-unifiler/server"
+	"github.com/tforceaio/tf-unifiler/task"
 )
 
 const serverShutdownTimeout = 17 * time.Second
 
-// ServeModule handles serving the HTTP server.
+// ServeModule starts the HTTP server and the task queue that backs it.
 type ServeModule struct {
+	ctrl    *engine.Controller
 	cfg     *config.RootConfig
 	httpSrv *server.Server
+	queue   *task.Queue
 	logger  zerolog.Logger
 }
 
 // Return new ServeModule.
-func NewServeModule(c *Controller) *ServeModule {
+func NewServeModule(c *engine.Controller) *ServeModule {
 	return &ServeModule{
+		ctrl:   c,
 		cfg:    c.Config,
 		logger: c.CommandLogger("server", "serve"),
 	}
 }
 
-// Start listen for HTTP requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
+// Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
 func (m *ServeModule) Start() error {
 	addr := fmt.Sprintf(":%d", m.cfg.Server.HTTP.Port)
 	m.logger.Info().
 		Str("addr", addr).
-		Msg("Start listening for HTTP requests.")
-	m.httpSrv = server.New(addr)
+		Int("concurrency", m.cfg.Server.Concurrency).
+		Msg("Start listening for RPC requests.")
+
+	runner := func(ctx context.Context, args []string, out io.Writer) error {
+		return engine.RunTask(m.ctrl, args, ctx, out)
+	}
+	m.queue = task.New(runner, m.cfg.Server.Concurrency, m.cfg.Server.Backlog, m.ctrl.Logger)
+	m.queue.Start()
+
+	m.httpSrv = server.New(addr, m.queue)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -70,13 +84,19 @@ func (m *ServeModule) Start() error {
 		m.logger.Info().Msg("Shutdown signal received, stopping HTTP server.")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
-		return m.httpSrv.Shutdown(shutdownCtx)
+		queueErr := m.queue.Shutdown(shutdownCtx)
+		if err := m.httpSrv.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		return queueErr
 	}
 }
 
 // Decorator to log error occurred when calling handlers.
 func (m *ServeModule) logError(err error) error {
-	logProgramError(m.logger, err)
+	if err != nil {
+		m.logger.Err(err).Msg("Unexpected error has occurred. Program will exit.")
+	}
 	return err
 }
 
@@ -86,7 +106,7 @@ func ServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start HTTP server.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := engine.InitAppWithBanner(context.TODO())
 			defer c.Close()
 			m := NewServeModule(c)
 			return m.logError(m.Start())

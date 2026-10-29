@@ -48,5 +48,7 @@ type PathConfig struct {
 
 // ServerConfig contains configurations for HTTP server.
 type ServerConfig struct {
-	HTTP *HTTPConfig `koanf:"http"`
+	HTTP        *HTTPConfig `koanf:"http"`
+	Concurrency int         `koanf:"concurrency"`
+	Backlog     int         `koanf:"backlog"`
 }

@@ -170,7 +170,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Export active configuration to stdout or file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -184,7 +184,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "get [key]",
 		Short: "Get the active value of a configuration key.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := NewController(true)
+			c := InitApp(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -197,7 +197,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value in the active YAML file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := NewController(true)
+			c := InitApp(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)

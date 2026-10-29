@@ -511,7 +511,7 @@ func MetadataCmd() *cobra.Command {
 		Use:   "index <input>...",
 		Short: "Scan inputs for file metadata.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, args)
 			m := NewMetadataModule(c, "scan")
@@ -529,7 +529,7 @@ func MetadataCmd() *cobra.Command {
 		Use:   "refine <input>...",
 		Short: "Refine inputs against metadata database.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, args)
 			m := NewMetadataModule(c, "scan")
@@ -558,7 +558,7 @@ func metadataQueryCmd() *cobra.Command {
 		Use:   "hash",
 		Short: "Query hash information.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_hash")
@@ -574,7 +574,7 @@ func metadataQueryCmd() *cobra.Command {
 		Use:   "session",
 		Short: "Query session information.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_session")
@@ -588,7 +588,7 @@ func metadataQueryCmd() *cobra.Command {
 		Use:   "set",
 		Short: "Query collection information.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMetadataFlags(cmd, nil)
 			m := NewMetadataModule(c, "query_set")
