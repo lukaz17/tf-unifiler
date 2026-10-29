@@ -1,18 +1,17 @@
-// Copyright (C) 2024 T-Force I/O
-// This file is part of TFunifiler
+// Copyright (C) 2024  T-Force I/O
 //
-// TFunifiler is free software: you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// TFunifiler is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with TFunifiler. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 package filesys
 
@@ -55,7 +54,7 @@ func IsDirectoryEmpty(dPath string) (bool, error) {
 
 func IsDirectoryExist(fPath string) bool {
 	fileInfo, err := os.Stat(fPath)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return fileInfo.IsDir()
@@ -84,9 +83,9 @@ func listDirectory(dPath string) (FsEntries, error) {
 	return contents, nil
 }
 
-func listEntries(entires []*FsEntry, maxDepth int, depth int) (FsEntries, error) {
+func listEntries(entries []*FsEntry, maxDepth int, depth int) (FsEntries, error) {
 	contents := FsEntries{}
-	for _, e := range entires {
+	for _, e := range entries {
 		contents = append(contents, e)
 		if (depth >= maxDepth && maxDepth >= 0) || !e.IsDir {
 			continue
