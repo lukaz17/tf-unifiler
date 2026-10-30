@@ -34,7 +34,7 @@ func (s *Server) handleEnqueue(c *gin.Context) {
 	t, err := s.tasks.Enqueue(req.Args)
 	if err != nil {
 		switch {
-		case errors.Is(err, task.ErrEmptyArgs):
+		case errors.Is(err, task.ErrEmptyArgs), errors.Is(err, task.ErrInvalidArgs):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, task.ErrQueueFull):
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})

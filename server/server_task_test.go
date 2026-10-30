@@ -16,7 +16,10 @@
 package server
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/tforceaio/tf-unifiler/task"
@@ -41,6 +44,21 @@ func TestEnqueueEmptyArgsBadRequest(t *testing.T) {
 	w := do(s, http.MethodPost, "/tasks", `{"args":[]}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestEnqueueInvalidArgsBadRequest(t *testing.T) {
+	s := New(":0", StatusInfo{}, &fakeTasks{
+		enqueueFn: func([]string) (task.Task, error) {
+			return task.Task{}, fmt.Errorf("%w: %w", task.ErrInvalidArgs, errors.New("unknown flag: --bogus"))
+		},
+	})
+	w := do(s, http.MethodPost, "/tasks", `{"args":["file","hash","--bogus"]}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "unknown flag: --bogus") {
+		t.Errorf("expected the rejection reason in the body, got %s", w.Body.String())
 	}
 }
 

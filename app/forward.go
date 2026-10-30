@@ -17,9 +17,7 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,27 +29,15 @@ import (
 // queueFlagName is the name of the global bool flag that determine execution is deferred or immediate.
 const queueFlagName = "queue"
 
-// errStopDeferredChecking aborts the isDeferred dry run once Cobra has parsed and validated the command, before any command body runs.
-var errStopDeferredChecking = errors.New("stop queue flag checking")
-
 // Check args for the --queue flag to determine whether execution is deferred or immediate.
-// Mutates the root command to inject a PersistentPreRunE that dry-runs Cobra; do not reuse it in a later call.
-func isDeferred(root *cobra.Command, args []string) (queued bool, err error) {
-	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		queued, _ = cmd.Flags().GetBool(queueFlagName)
-		return errStopDeferredChecking
+// Mutates the root command through engine.DryRun; do not reuse it in a later call.
+func isDeferred(root *cobra.Command, args []string) (bool, error) {
+	cmd, err := engine.DryRun(root, args)
+	if err != nil || cmd == nil {
+		return false, err
 	}
-	root.SilenceErrors = true
-	root.SilenceUsage = true
-	root.SetArgs(args)
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-
-	err = root.Execute()
-	if errors.Is(err, errStopDeferredChecking) {
-		return queued, nil
-	}
-	return false, err
+	queued, _ := cmd.Flags().GetBool(queueFlagName)
+	return queued, nil
 }
 
 // Forward args to the running TFunifiler server to be enqueued.

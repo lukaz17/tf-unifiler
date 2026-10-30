@@ -92,7 +92,7 @@ func (m *ServeModule) Start() error {
 	runner := func(ctx context.Context, args []string, out io.Writer) error {
 		return engine.RunTask(m.ctrl, args, ctx, out)
 	}
-	m.queue = task.New(runner, engine.RedactArgs, m.cfg.Server.Concurrency, m.cfg.Server.Backlog, m.ctrl.Logger)
+	m.queue = task.New(runner, engine.ValidateArgs, engine.RedactArgs, m.cfg.Server.Concurrency, m.cfg.Server.Backlog, m.ctrl.Logger)
 	m.queue.Start()
 
 	if interactive {

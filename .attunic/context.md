@@ -129,7 +129,7 @@ Facts about the project which have been confirmed. They may look wrong or contra
 | Fact | Reason |
 |------|--------|
 <!-- Project-specific / Confirmed Facts -->
-| No CLI subcommand defines its own `PersistentPreRun`/`PersistentPreRunE`; the root command's is the only one. | `isDeferred` ([forward.go](../forward.go)) detects and validates `--queue` via a `PersistentPreRunE` on the root. Cobra runs only the *nearest* `PersistentPreRun(E)` in a command's ancestry (unless `cobra.EnableTraverseRunHooks` is set), so one on any subcommand would shadow the root's and silently break `--queue` forwarding and up-front validation for that command. |
+| No CLI subcommand defines its own `PersistentPreRun`/`PersistentPreRunE`; the root command's is the only one. | Cobra runs only the nearest `PersistentPreRunE` in a command's ancestry, so one on a subcommand breaks `engine.DryRun` ([common_dryrun.go](../engine/common_dryrun.go)) and the features that depend on it (`--queue` forwarding and RPC enqueue validation). |
 
 ## Project-specific
 

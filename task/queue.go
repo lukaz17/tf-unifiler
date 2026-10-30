@@ -33,6 +33,8 @@ var (
 	ErrClosed = errors.New("task queue is closed")
 	// ErrEmptyArgs is returned when enqueueing a task with no arguments.
 	ErrEmptyArgs = errors.New("task arguments cannot be empty")
+	// ErrInvalidArgs is returned when enqueueing a task whose arguments the queue's Validator rejects.
+	ErrInvalidArgs = errors.New("invalid task arguments")
 	// ErrNotFound is returned when no task matches the given id.
 	ErrNotFound = errors.New("task not found")
 	// ErrQueueFull is returned when the pending backlog is at capacity.
@@ -41,11 +43,12 @@ var (
 
 // Queue is an in-memory FIFO task queue processed by a fixed pool of workers.
 type Queue struct {
-	runner   Runner
-	redactor Redactor
-	workers  int
-	outLimit int
-	logger   zerolog.Logger
+	runner    Runner
+	validator Validator
+	redactor  Redactor
+	workers   int
+	outLimit  int
+	logger    zerolog.Logger
 
 	mu        sync.Mutex
 	entries   map[string]*entry
@@ -56,8 +59,8 @@ type Queue struct {
 	wg sync.WaitGroup
 }
 
-// Return new queue that runs tasks via runner and masks their args via redact; a nil redact keeps args as-is.
-func New(runner Runner, redactor Redactor, concurrency, backlog int, logger zerolog.Logger) *Queue {
+// Return new queue that runs tasks via runner, rejects their args via validator and masks them via redactor.
+func New(runner Runner, validator Validator, redactor Redactor, concurrency, backlog int, logger zerolog.Logger) *Queue {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -66,6 +69,7 @@ func New(runner Runner, redactor Redactor, concurrency, backlog int, logger zero
 	}
 	return &Queue{
 		runner:    runner,
+		validator: validator,
 		redactor:  redactor,
 		workers:   concurrency,
 		outLimit:  defaultOutputLimit,
@@ -123,6 +127,9 @@ func (q *Queue) Shutdown(ctx context.Context) error {
 func (q *Queue) Enqueue(args []string) (Task, error) {
 	if len(args) == 0 {
 		return Task{}, ErrEmptyArgs
+	}
+	if err := q.validateArgs(args); err != nil {
+		return Task{}, fmt.Errorf("%w: %w", ErrInvalidArgs, err)
 	}
 	redacted := q.redactArgs(args)
 
@@ -317,6 +324,14 @@ func (q *Queue) safeRun(ctx context.Context, args []string, out *boundedBuffer) 
 		}
 	}()
 	return q.runner(ctx, args, out)
+}
+
+// Return the error of the queue's Validator for args, or nil when it has none.
+func (q *Queue) validateArgs(args []string) error {
+	if q.validator == nil {
+		return nil
+	}
+	return q.validator(args)
 }
 
 // Consume ids from the pending channel and run each task until Shutdown closes the channel.

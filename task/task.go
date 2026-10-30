@@ -40,6 +40,9 @@ type Redactor func(args []string) []string
 // It must honor ctx where it can, though cancellation of an already-running task is best-effort.
 type Runner func(ctx context.Context, args []string, out io.Writer) error
 
+// Validator returns an error describing why a task's argument vector cannot run, or nil when it can. It must not modify args.
+type Validator func(args []string) error
+
 // Task is an immutable snapshot of a task's state, safe to hand to callers; its Args are masked by the queue's Redactor.
 type Task struct {
 	ID         string     `json:"id"`
