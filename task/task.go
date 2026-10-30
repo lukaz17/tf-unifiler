@@ -33,11 +33,14 @@ const (
 	StatusCanceled  Status = "canceled"
 )
 
+// Redactor returns a new copy of a task's argument vector with its secrets masked.
+type Redactor func(args []string) []string
+
 // Runner executes a task's argument vector, writing human-readable output to out.
 // It must honor ctx where it can, though cancellation of an already-running task is best-effort.
 type Runner func(ctx context.Context, args []string, out io.Writer) error
 
-// Task is an immutable snapshot of a task's state, safe to hand to callers.
+// Task is an immutable snapshot of a task's state, safe to hand to callers; its Args are masked by the queue's Redactor.
 type Task struct {
 	ID         string     `json:"id"`
 	Args       []string   `json:"args"`
@@ -55,6 +58,7 @@ type entry struct {
 	mu         sync.Mutex
 	id         string
 	args       []string
+	redacted   []string // args masked by the queue's Redactor, never mutated.
 	status     Status
 	err        string
 	out        *boundedBuffer
@@ -78,7 +82,7 @@ func (e *entry) snapshot() Task {
 
 	t := Task{
 		ID:         e.id,
-		Args:       append([]string(nil), e.args...),
+		Args:       append([]string(nil), e.redacted...),
 		Status:     e.status,
 		Err:        e.err,
 		Output:     e.out.String(),

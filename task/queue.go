@@ -42,6 +42,7 @@ var (
 // Queue is an in-memory FIFO task queue processed by a fixed pool of workers.
 type Queue struct {
 	runner   Runner
+	redactor Redactor
 	workers  int
 	outLimit int
 	logger   zerolog.Logger
@@ -55,8 +56,8 @@ type Queue struct {
 	wg sync.WaitGroup
 }
 
-// Return new queue that runs tasks via runner.
-func New(runner Runner, concurrency, backlog int, logger zerolog.Logger) *Queue {
+// Return new queue that runs tasks via runner and masks their args via redact; a nil redact keeps args as-is.
+func New(runner Runner, redactor Redactor, concurrency, backlog int, logger zerolog.Logger) *Queue {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -65,6 +66,7 @@ func New(runner Runner, concurrency, backlog int, logger zerolog.Logger) *Queue 
 	}
 	return &Queue{
 		runner:    runner,
+		redactor:  redactor,
 		workers:   concurrency,
 		outLimit:  defaultOutputLimit,
 		logger:    logger,
@@ -122,6 +124,7 @@ func (q *Queue) Enqueue(args []string) (Task, error) {
 	if len(args) == 0 {
 		return Task{}, ErrEmptyArgs
 	}
+	redacted := q.redactArgs(args)
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -133,6 +136,7 @@ func (q *Queue) Enqueue(args []string) (Task, error) {
 	e := &entry{
 		id:         uuid.NewString(),
 		args:       append([]string(nil), args...),
+		redacted:   redacted,
 		status:     StatusQueued,
 		out:        &boundedBuffer{limit: q.outLimit},
 		enqueuedAt: time.Now().UTC(),
@@ -144,7 +148,7 @@ func (q *Queue) Enqueue(args []string) (Task, error) {
 	case q.pending <- e.id:
 		q.entries[e.id] = e
 		q.order = append(q.order, e.id)
-		q.logger.Debug().Str("id", e.id).Strs("args", e.args).Msg("Task enqueued.")
+		q.logger.Debug().Str("id", e.id).Strs("args", e.redacted).Msg("Task enqueued.")
 		return e.snapshot(), nil
 	default:
 		return Task{}, ErrQueueFull
@@ -241,6 +245,14 @@ func (q *Queue) Stats() (pending, total int) {
 	return pending, total
 }
 
+// Return a copy of args with secrets masked by the queue's Redactor, or a plain copy when it has none.
+func (q *Queue) redactArgs(args []string) []string {
+	if q.redactor == nil {
+		return append([]string(nil), args...)
+	}
+	return q.redactor(args)
+}
+
 // Return the entry with the given id, or nil when no task matches.
 func (q *Queue) lookup(id string) *entry {
 	q.mu.Lock()
@@ -267,9 +279,10 @@ func (q *Queue) run(id string) {
 	e.startedAt = time.Now().UTC()
 	out := e.out
 	args := append([]string(nil), e.args...)
+	redacted := e.redacted
 	e.mu.Unlock()
 
-	q.logger.Info().Str("id", id).Strs("args", args).Msg("Task started.")
+	q.logger.Info().Str("id", id).Strs("args", redacted).Msg("Task started.")
 	runErr := q.safeRun(ctx, args, out)
 
 	e.mu.Lock()

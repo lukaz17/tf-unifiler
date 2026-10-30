@@ -16,9 +16,12 @@
 package task
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,23 +29,6 @@ import (
 
 	"github.com/rs/zerolog"
 )
-
-func silentLogger() zerolog.Logger {
-	return zerolog.New(io.Discard)
-}
-
-// Poll cond until it is true or the deadline elapses.
-func waitFor(t *testing.T, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("condition not met before deadline")
-}
 
 func TestSequentialOrderAtConcurrencyOne(t *testing.T) {
 	var mu sync.Mutex
@@ -55,7 +41,7 @@ func TestSequentialOrderAtConcurrencyOne(t *testing.T) {
 		order = append(order, args[0])
 		mu.Unlock()
 		return nil
-	}, 1, 8, silentLogger())
+	}, nil, 1, 8, silentLogger())
 	q.Start()
 
 	for _, name := range []string{"a", "b", "c"} {
@@ -93,7 +79,7 @@ func TestConcurrencyRunsInParallel(t *testing.T) {
 		<-proceed
 		atomic.AddInt32(&running, -1)
 		return nil
-	}, 3, 8, silentLogger())
+	}, nil, 3, 8, silentLogger())
 	q.Start()
 
 	for i := 0; i < 3; i++ {
@@ -106,7 +92,7 @@ func TestConcurrencyRunsInParallel(t *testing.T) {
 }
 
 func TestShutdownRejectsEnqueue(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, 1, 4, silentLogger())
 	q.Start()
 	if err := q.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown: %v", err)
@@ -117,7 +103,7 @@ func TestShutdownRejectsEnqueue(t *testing.T) {
 }
 
 func TestEnqueueRejectsEmptyArgs(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, 1, 4, silentLogger())
 	if _, err := q.Enqueue(nil); !errors.Is(err, ErrEmptyArgs) {
 		t.Fatalf("expected ErrEmptyArgs, got %v", err)
 	}
@@ -128,7 +114,7 @@ func TestBacklogFull(t *testing.T) {
 	q := New(func(context.Context, []string, io.Writer) error {
 		<-block
 		return nil
-	}, 1, 1, silentLogger())
+	}, nil, 1, 1, silentLogger())
 	q.Start()
 
 	// First is picked up by the worker; second fills the backlog of 1; third overflows.
@@ -146,6 +132,91 @@ func TestBacklogFull(t *testing.T) {
 	close(block)
 }
 
+func TestNilRedactorKeepsArgs(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, 1, 4, silentLogger())
+	want := []string{"--password", "secret"}
+
+	got, err := q.Enqueue([]string{"--password", "secret"})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if !slices.Equal(got.Args, want) {
+		t.Errorf("Enqueue args = %q, want %q", got.Args, want)
+	}
+}
+
+func TestRedactorMasksSnapshotArgs(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, maskSecret, 1, 4, silentLogger())
+	want := []string{"--password", "***"}
+
+	enqueued, err := q.Enqueue([]string{"--password", "secret"})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	got, _ := q.Get(enqueued.ID)
+	listed := q.List()
+
+	if !slices.Equal(enqueued.Args, want) {
+		t.Errorf("Enqueue args = %q, want %q", enqueued.Args, want)
+	}
+	if !slices.Equal(got.Args, want) {
+		t.Errorf("Get args = %q, want %q", got.Args, want)
+	}
+	if len(listed) != 1 || !slices.Equal(listed[0].Args, want) {
+		t.Errorf("List = %+v, want one task with args %q", listed, want)
+	}
+}
+
+func TestRedactorMasksLoggedArgs(t *testing.T) {
+	prevLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel) // the enqueued log is written at debug level.
+	t.Cleanup(func() { zerolog.SetGlobalLevel(prevLevel) })
+	var logs syncBuffer
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, maskSecret, 1, 4, zerolog.New(&logs))
+	q.Start()
+
+	if _, err := q.Enqueue([]string{"--password", "secret"}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitFor(t, func() bool { return strings.Contains(logs.String(), "Task finished.") })
+
+	if strings.Contains(logs.String(), "secret") {
+		t.Errorf("logs leak the secret:\n%s", logs.String())
+	}
+	if n := strings.Count(logs.String(), `"args":["--password","***"]`); n != 2 {
+		t.Errorf("expected masked args in the enqueued and started logs, found %d in:\n%s", n, logs.String())
+	}
+}
+
+func TestRunnerReceivesUnredactedArgs(t *testing.T) {
+	var mu sync.Mutex
+	var ran []string
+	q := New(func(_ context.Context, args []string, _ io.Writer) error {
+		mu.Lock()
+		ran = args
+		mu.Unlock()
+		return nil
+	}, maskSecret, 1, 4, silentLogger())
+	q.Start()
+	want := []string{"--password", "secret"}
+
+	tsk, err := q.Enqueue([]string{"--password", "secret"})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitFor(t, func() bool {
+		got, _ := q.Get(tsk.ID)
+		return got.Status == StatusSucceeded
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(ran, want) {
+		t.Errorf("runner args = %q, want %q", ran, want)
+	}
+}
+
 func TestCancelQueuedTask(t *testing.T) {
 	block := make(chan struct{})
 	var ran int32
@@ -158,7 +229,7 @@ func TestCancelQueuedTask(t *testing.T) {
 		}
 		atomic.AddInt32(&ran, 1)
 		return nil
-	}, 1, 8, silentLogger())
+	}, nil, 1, 8, silentLogger())
 	q.Start()
 
 	if _, err := q.Enqueue([]string{"blocker"}); err != nil {
@@ -192,7 +263,7 @@ func TestCancelRunningTaskSignalsContext(t *testing.T) {
 		<-ctx.Done() // cooperative: the runner honors the context here.
 		atomic.StoreInt32(&observedCancel, 1)
 		return ctx.Err()
-	}, 1, 8, silentLogger())
+	}, nil, 1, 8, silentLogger())
 	q.Start()
 
 	tsk, err := q.Enqueue([]string{"long"})
@@ -211,14 +282,14 @@ func TestCancelRunningTaskSignalsContext(t *testing.T) {
 }
 
 func TestCancelUnknownTask(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 4, silentLogger())
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, 1, 4, silentLogger())
 	if err := q.Cancel("nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 
 func TestClearRemovesTerminalOnly(t *testing.T) {
-	q := New(func(context.Context, []string, io.Writer) error { return nil }, 1, 8, silentLogger())
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, 1, 8, silentLogger())
 	q.Start()
 
 	tsk, _ := q.Enqueue([]string{"done"})
@@ -242,7 +313,7 @@ func TestStatsCountsPendingAndTotal(t *testing.T) {
 			<-block
 		}
 		return nil
-	}, 1, 8, silentLogger())
+	}, nil, 1, 8, silentLogger())
 	q.Start()
 
 	if _, err := q.Enqueue([]string{"blocker"}); err != nil {
@@ -275,7 +346,7 @@ func TestStatsCountsPendingAndTotal(t *testing.T) {
 func TestFailedTaskRecordsError(t *testing.T) {
 	q := New(func(context.Context, []string, io.Writer) error {
 		return errors.New("boom")
-	}, 1, 4, silentLogger())
+	}, nil, 1, 4, silentLogger())
 	q.Start()
 
 	tsk, err := q.Enqueue([]string{"x"})
@@ -296,7 +367,7 @@ func TestOutputIsCaptured(t *testing.T) {
 	q := New(func(_ context.Context, _ []string, out io.Writer) error {
 		_, _ = io.WriteString(out, "hello output")
 		return nil
-	}, 1, 4, silentLogger())
+	}, nil, 1, 4, silentLogger())
 	q.Start()
 
 	tsk, err := q.Enqueue([]string{"x"})
@@ -316,7 +387,7 @@ func TestOutputIsCaptured(t *testing.T) {
 func TestPanicInRunnerIsIsolated(t *testing.T) {
 	q := New(func(context.Context, []string, io.Writer) error {
 		panic("kaboom")
-	}, 1, 4, silentLogger())
+	}, nil, 1, 4, silentLogger())
 	q.Start()
 
 	tsk, err := q.Enqueue([]string{"x"})
@@ -336,4 +407,51 @@ func TestPanicInRunnerIsIsolated(t *testing.T) {
 		got, _ := q.Get(tsk2.ID)
 		return got.Status == StatusFailed
 	})
+}
+
+// Poll cond until it is true or the deadline elapses.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition not met before deadline")
+}
+
+// syncBuffer is a log sink the workers can write to while a test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// Mask every "secret" arg, standing in for the caller's Redactor.
+func maskSecret(args []string) []string {
+	masked := make([]string, len(args))
+	for i, a := range args {
+		if a == "secret" {
+			a = "***"
+		}
+		masked[i] = a
+	}
+	return masked
+}
+
+func silentLogger() zerolog.Logger {
+	return zerolog.New(io.Discard)
 }

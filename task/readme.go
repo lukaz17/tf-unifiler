@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// Package task provides an in-memory queue that runs command-line argument
-// vectors as background tasks through an injected Runner, with a configurable
-// pool of workers (default 1). It depends on neither engine nor server: the
-// executor is supplied by the caller.
+// Package task provides an in-memory queue that runs command-line argument vectors as background tasks
+// through an injected Runner, with a configurable pool of workers.
 package task
