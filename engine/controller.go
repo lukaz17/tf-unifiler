@@ -83,6 +83,12 @@ func (c *Controller) Close() {
 	}
 }
 
+// Redirect console log lines of this Controller to out; the rotating log file keeps receiving every line.
+// Loggers derived before the call keep writing to the previous console, so call it before deriving or sharing them.
+func (c *Controller) RedirectConsoleLogs(out io.Writer) {
+	c.Logger = diag.NewLoggerFromWriter(diag.NewLogWriterTo(out, c.Interactive, c.logFile))
+}
+
 // Get a ZeroLog logger instance for command handler from root instance.
 func (c *Controller) CommandLogger(module, command string) zerolog.Logger {
 	return c.Logger.With().Str("module", module).Str("command", command).Logger()

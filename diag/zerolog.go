@@ -57,15 +57,19 @@ func (s *syncLevelWriter) WriteLevel(level zerolog.Level, p []byte) (int, error)
 func NewLogWriter(cfg *config.RootConfig, useFS bool) (zerolog.LevelWriter, *lumberjack.Logger, error) {
 	zerolog.SetGlobalLevel(resolveLevel(cfg))
 
-	consoleWriter := ConsoleLevelWriter(os.Stdout, tui.IsTTY())
-
 	logFile, err := initLogFile(useFS, cfg.ConfigDir)
+	return NewLogWriterTo(os.Stdout, tui.IsTTY(), logFile), logFile, err
+}
+
+// Return a new thread-safe log writer instance writing human-readable lines to console, plus raw lines to logFile when it is not nil.
+func NewLogWriterTo(console io.Writer, color bool, logFile *lumberjack.Logger) zerolog.LevelWriter {
+	consoleWriter := ConsoleLevelWriter(console, color)
 	if logFile == nil {
-		return &syncLevelWriter{w: consoleWriter}, nil, err
+		return &syncLevelWriter{w: consoleWriter}
 	}
 
 	multiWriter := zerolog.MultiLevelWriter(consoleWriter, FileLevelWriter(logFile))
-	return &syncLevelWriter{w: multiWriter}, logFile, nil
+	return &syncLevelWriter{w: multiWriter}
 }
 
 // Build a logger from a pre-composed writer.

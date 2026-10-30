@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforceaio/tf-unifiler/config"
@@ -31,9 +32,13 @@ import (
 	"github.com/tforceaio/tf-unifiler/filesys"
 	"github.com/tforceaio/tf-unifiler/server"
 	"github.com/tforceaio/tf-unifiler/task"
+	"github.com/tforceaio/tf-unifiler/tui"
 )
 
-const serverShutdownTimeout = 17 * time.Second
+const (
+	serverShutdownTimeout = 17 * time.Second
+	taskStatsInterval     = 250 * time.Millisecond // how often the terminal view refreshes its task counts.
+)
 
 // ServeModule starts the RPC server and the task queue that backs it.
 type ServeModule struct {
@@ -49,8 +54,13 @@ func NewServeModule(c *engine.Controller) *ServeModule {
 	return &ServeModule{
 		ctrl:   c,
 		cfg:    c.Config,
-		logger: c.CommandLogger("server", "serve"),
+		logger: serveLogger(c),
 	}
+}
+
+// Return the logger of the serve command.
+func serveLogger(c *engine.Controller) zerolog.Logger {
+	return c.CommandLogger("server", "serve")
 }
 
 // Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
@@ -63,6 +73,16 @@ func (m *ServeModule) Start() error {
 	}
 	defer lock.Release()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	notifier, interactive := m.ctrl.Notifier.(*tui.BubbleteaNotifier)
+	if interactive {
+		// The view puts the terminal in raw mode, so ctrl+c reaches it as a key press instead of a signal.
+		view := m.showTaskStatus(notifier, stop)
+		defer view.Stop()
+	}
+
 	m.logger.Info().
 		Str("addr", addr).
 		Int("concurrency", m.cfg.Server.Concurrency).
@@ -74,10 +94,12 @@ func (m *ServeModule) Start() error {
 	m.queue = task.New(runner, m.cfg.Server.Concurrency, m.cfg.Server.Backlog, m.ctrl.Logger)
 	m.queue.Start()
 
-	m.httpSrv = server.New(addr, m.statusInfo(), m.queue)
+	if interactive {
+		stopTracking := m.trackTasks(notifier)
+		defer stopTracking()
+	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	m.httpSrv = server.New(addr, m.statusInfo(), m.queue)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -97,6 +119,43 @@ func (m *ServeModule) Start() error {
 			return err
 		}
 		return queueErr
+	}
+}
+
+// Show finished tasks against total tasks on the terminal with console logs printed above it; ctrl+c in the view calls onInterrupt.
+func (m *ServeModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func()) *tui.TeaProgramHandle {
+	view := tui.RunProcessStatus(n, onInterrupt)
+	console := view.Writer(os.Stdout)
+	m.ctrl.RedirectConsoleLogs(console)
+	// m.logger was derived before the redirect and still writes to stdout directly.
+	m.logger = serveLogger(m.ctrl)
+	// gin writes its route list and recovered panics straight to these writers, read when server.New builds the router.
+	gin.DefaultWriter = console
+	gin.DefaultErrorWriter = console
+	return view
+}
+
+// Refresh the view's task counts from the queue every taskStatsInterval, and return a function that stops refreshing and waits for it to end.
+func (m *ServeModule) trackTasks(n *tui.BubbleteaNotifier) func() {
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(taskStatsInterval)
+		defer ticker.Stop()
+		for {
+			pending, total := m.queue.Stats()
+			n.SetTasks(uint64(total-pending), uint64(total))
+			select {
+			case <-quit:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return func() {
+		close(quit)
+		<-done
 	}
 }
 
