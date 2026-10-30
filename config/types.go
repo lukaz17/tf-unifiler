@@ -19,7 +19,8 @@ package config
 type RootConfig struct {
 	ConfigDir  string        `koanf:"-"`
 	ConfigFile string        `koanf:"-"`
-	IsPortable bool          `koanf:"-"`
+	Portable   bool          `koanf:"-"`
+	Debug      bool          `koanf:"debug"`
 	Logger     *LoggerConfig `koanf:"log"`
 	Path       *PathConfig   `koanf:"paths"`
 	Server     *ServerConfig `koanf:"server"`

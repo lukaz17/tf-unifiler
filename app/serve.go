@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
+	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/engine"
 	"github.com/tforceaio/tf-unifiler/filesys"
@@ -99,6 +100,7 @@ func (m *ServeModule) Start() error {
 		defer stopTracking()
 	}
 
+	gin.SetMode(opx.Ternary(m.cfg.Debug, gin.DebugMode, gin.ReleaseMode))
 	m.httpSrv = server.New(addr, m.statusInfo(), m.queue)
 
 	serveErr := make(chan error, 1)
@@ -171,7 +173,7 @@ func (m *ServeModule) statusInfo() server.StatusInfo {
 		WorkingDir: pwd,
 		ConfigDir:  m.cfg.ConfigDir,
 		Executable: exec,
-		Portable:   m.cfg.IsPortable,
+		Portable:   m.cfg.Portable,
 	}
 }
 
@@ -187,7 +189,7 @@ func (m *ServeModule) logError(err error) error {
 func ServeCmd() *cobra.Command {
 	serveCmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start HTTP server.",
+		Short: "Start RPC server.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := engine.InitAppWithBanner(context.TODO())
 			defer c.Close()

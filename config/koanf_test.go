@@ -27,6 +27,9 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Error("Error get default config", err)
 	}
+	if cfg.Debug {
+		t.Error("Wrong Debug. Expected default 'false' Actual 'true'")
+	}
 	if cfg.Logger.Level != "info" {
 		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "info", cfg.Logger.Level)
 	}
@@ -43,6 +46,7 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestFileConfig(t *testing.T) {
 	contents := []string{
+		"debug: true",
 		"paths:",
 		"  ffmpeg: /usr/bin/ffmpeg",
 		"  imagemagick: magick",
@@ -60,6 +64,9 @@ func TestFileConfig(t *testing.T) {
 	cfg, err := buildConfig(true, f)
 	if err != nil {
 		t.Error("Error get config from file", err)
+	}
+	if !cfg.Debug {
+		t.Error("Wrong Debug. Expected 'true' Actual 'false'")
 	}
 	if cfg.Path.FFMpegPath != "/usr/bin/ffmpeg" {
 		t.Errorf("Wrong FFMpegPath. Expected '%s' Actual '%s'", "/usr/bin/ffmpeg", cfg.Path.FFMpegPath)
@@ -82,10 +89,14 @@ func TestFileConfig(t *testing.T) {
 }
 
 func TestEnvConfig(t *testing.T) {
+	t.Setenv("TFUNIFILER_DEBUG", "true")
 	t.Setenv("TFUNIFILER_LOG_LEVEL", "warn")
 	cfg, err := buildConfig(true, filepath.Join(t.TempDir(), "unifiler.yaml"))
 	if err != nil {
 		t.Error("Error get config from env", err)
+	}
+	if !cfg.Debug {
+		t.Error("Wrong Debug. Expected 'true' Actual 'false'")
 	}
 	if cfg.Logger.Level != "warn" {
 		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "warn", cfg.Logger.Level)

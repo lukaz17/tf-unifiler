@@ -73,7 +73,7 @@ func InitAppWithBanner(ctx context.Context) *Controller {
 	ctrl.Logger.Info().Msgf("Working directory %s", pwd)
 	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
 	ctrl.Logger.Info().Msgf("Executable file %s", exec)
-	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.IsPortable)
+	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.Portable)
 	ctrl.Logger.Info().Msg("-----------------")
 
 	return ctrl

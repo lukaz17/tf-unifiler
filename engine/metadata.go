@@ -86,7 +86,7 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 			}
 			archiveName = filepath.Base(rootDir)
 		}
-		ctx, err := db.Connect(dbFile)
+		ctx, err := db.Connect(dbFile, m.logger)
 		defer ctx.Disconnect()
 		if err != nil {
 			return err
@@ -148,7 +148,7 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 	}
 
 	if ctx == nil {
-		ctx, err = db.Connect(dbFile)
+		ctx, err = db.Connect(dbFile, m.logger)
 		defer ctx.Disconnect()
 		if err != nil {
 			return err
@@ -189,7 +189,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 	}
 
 	dbFile := MetadataWorkspaceDatabase(workspaceDir)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, m.logger)
 	if err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func (m *MetadataModule) QueryHash(workspaceDir string, collections, sha256s []s
 	}
 
 	dbFile := MetadataWorkspaceDatabase(workspaceDir)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, m.logger)
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 	}
 
 	dbFile := MetadataWorkspaceDatabase(workspaceDir)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, m.logger)
 	if err != nil {
 		return err
 	}
@@ -326,7 +326,7 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 	}
 
 	dbFile := MetadataWorkspaceDatabase(workspaceDir)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, m.logger)
 	if err != nil {
 		return err
 	}

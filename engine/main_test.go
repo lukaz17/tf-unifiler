@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/tforce-io/tf-golib/multiarch"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/db"
@@ -55,7 +56,7 @@ func getTestDB(entity, function string) *db.DbContext {
 		"/tmp",
 	)
 	dbFile := filepath.Join(tmpDir, fileName)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, zerolog.Nop())
 	if err != nil {
 		panic(err)
 	}
