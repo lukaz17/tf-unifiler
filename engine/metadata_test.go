@@ -16,17 +16,52 @@
 package engine
 
 import (
+	"bytes"
+	"context"
 	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog/log"
 	"github.com/tforce-io/tf-golib/stdx"
+	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/core"
 	"github.com/tforceaio/tf-unifiler/db"
 )
 
-func TestFileSaveIResults(t *testing.T) {
-	ctx := getTestDB("Main", "FileSaveIResults")
+func TestMetadataQueryWritesToTaskOutput(t *testing.T) {
+	// Not t.TempDir(): the query commands keep metadata.db open, so its cleanup fails on Windows.
+	workspace := filepath.Join(os.TempDir(), "unifiler_metadata_query_output")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("creating workspace: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"hash query", []string{"metadata", "query", "hash", "-w", workspace}, "RESULTS"},
+		{"session list", []string{"metadata", "query", "session", "-w", workspace}, "Latest sessions:"},
+		{"set list", []string{"metadata", "query", "set", "-w", workspace}, "ALL SETS:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := RunTask(base, tt.args, context.Background(), &out); err != nil {
+				t.Fatalf("RunTask(%v): %v", tt.args, err)
+			}
+			if !strings.Contains(out.String(), tt.want) {
+				t.Errorf("task output does not contain %q, so the result was printed elsewhere; got:\n%s", tt.want, out.String())
+			}
+		})
+	}
+}
+
+func TestMetadataSaveIResults(t *testing.T) {
+	ctx := getTestDB("Main", "MetadataSaveIResults")
 	exes, imgs := testingFileData()
 	tests := []struct {
 		group        string

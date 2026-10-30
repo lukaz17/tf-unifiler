@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,8 @@ type FileModule struct {
 	interactive bool
 	notifier    diag.Notifier
 	logger      zerolog.Logger
+	in          io.Reader
+	out         io.Writer
 }
 
 // Return new FileModule.
@@ -55,6 +58,8 @@ func NewFileModule(c *Controller, cmdName string) *FileModule {
 		interactive: c.Interactive,
 		notifier:    c.Notifier,
 		logger:      c.CommandLogger("file", cmdName),
+		in:          c.In,
+		out:         c.Out,
 	}
 }
 
@@ -121,11 +126,11 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	for _, input := range inputs {
 		fmtInputs.WriteString(fmt.Sprintf("\n - %s", input))
 	}
-	fmt.Printf("\nInputs:%s\n", fmtInputs.String())
-	fmt.Printf("\nOutput:\n - %s\n", output)
+	fmt.Fprintf(m.out, "\nInputs:%s\n", fmtInputs.String())
+	fmt.Fprintf(m.out, "\nOutput:\n - %s\n", output)
 
 	if m.interactive {
-		fmt.Println("")
+		fmt.Fprintln(m.out, "")
 		opts, err := tui.RunCompressOptions(&tui.CompressOptionsValue{
 			ArchiveType:    format,
 			CompressLevel:  compressLevel,
@@ -170,7 +175,7 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	if threads > 0 {
 		threadNum = nullable.FromInt(threads)
 	}
-	_, err = packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, false)
+	_, err = packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, m.in, m.out, false)
 	if err != nil {
 		return err
 	}

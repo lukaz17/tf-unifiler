@@ -68,7 +68,7 @@ func (m *VideoModule) Info(file string) error {
 		OutputFile:   miFile,
 	}
 
-	_, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), false)
+	_, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 		InputFile:    inputFile.AbsolutePath,
 		OutputFormat: "JSON",
 	}
-	stdout, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), false)
+	stdout, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -232,7 +232,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 			ffmOptions.VideoFilter = vfHDR
 		}
 
-		_, err := exec.Run(m.cfg.Path.FFMpegPath, exec.NewFFmpegArgs(ffmOptions), false)
+		_, err := exec.Run(m.cfg.Path.FFMpegPath, exec.NewFFmpegArgs(ffmOptions), nil, nil)
 		if err != nil {
 			m.logger.Info().Msg("Failed to take video screenshot.")
 			return 0, err

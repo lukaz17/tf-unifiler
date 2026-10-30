@@ -43,6 +43,9 @@ func TestTaskScopedControllerNeverPrompts(t *testing.T) {
 			if c.Interactive {
 				t.Error("task-scoped controller is interactive; queued commands would prompt on the server's terminal")
 			}
+			if c.In != nil {
+				t.Error("task-scoped controller has an input; queued commands would read the server's terminal")
+			}
 			if m := NewFileModule(c, "pack"); m.interactive {
 				t.Error("file module of a task is interactive; file pack would open the options picker on the server's terminal")
 			}

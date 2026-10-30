@@ -17,6 +17,7 @@ package engine
 
 import (
 	"io"
+	"os"
 
 	"github.com/rs/zerolog"
 	"github.com/tforceaio/tf-unifiler/config"
@@ -33,6 +34,8 @@ type Controller struct {
 	Config   *config.RootConfig
 	Logger   zerolog.Logger
 	Notifier diag.Notifier
+	In       io.Reader
+	Out      io.Writer
 
 	Interactive bool
 
@@ -63,6 +66,8 @@ func NewController(useFS bool) *Controller {
 		Config:   cfg,
 		Logger:   logger,
 		Notifier: notifier,
+		In:       os.Stdin,
+		Out:      os.Stdout,
 
 		Interactive: interactive,
 
@@ -99,6 +104,8 @@ func (c *Controller) fork(out io.Writer) *Controller {
 		Config:   c.Config,
 		Logger:   diag.NewLoggerFromWriter(writer),
 		Notifier: c.Notifier,
+		In:       nil, // a task has no input, it must never read the server's terminal.
+		Out:      out,
 
 		Interactive: false,
 

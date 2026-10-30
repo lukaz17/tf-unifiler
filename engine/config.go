@@ -17,6 +17,7 @@ package engine
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,6 +35,7 @@ import (
 type ConfigModule struct {
 	cfg    *config.RootConfig
 	logger zerolog.Logger
+	out    io.Writer
 }
 
 // Return new ConfigModule instance.
@@ -41,6 +43,7 @@ func NewConfigModule(c *Controller) *ConfigModule {
 	return &ConfigModule{
 		cfg:    c.Config,
 		logger: c.ModuleLogger("config"),
+		out:    c.Out,
 	}
 }
 
@@ -71,7 +74,7 @@ func (m *ConfigModule) Export(outputPath string, diffOnly bool) error {
 		return err
 	}
 	if outputPath == "" {
-		fmt.Print(string(data))
+		fmt.Fprint(m.out, string(data))
 	} else {
 		err := m.writeFile(outputPath, data)
 		if err != nil {
@@ -96,7 +99,7 @@ func (m *ConfigModule) Get(key string) error {
 	}
 
 	if val := k.Get(key); val != nil {
-		fmt.Printf("%v\n", val)
+		fmt.Fprintf(m.out, "%v\n", val)
 	}
 	return nil
 }

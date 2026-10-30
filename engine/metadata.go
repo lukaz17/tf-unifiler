@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,7 @@ import (
 type MetadataModule struct {
 	logger   zerolog.Logger
 	notifier diag.Notifier
+	out      io.Writer
 }
 
 // Return new MetadataModule.
@@ -48,6 +50,7 @@ func NewMetadataModule(c *Controller, cmdName string) *MetadataModule {
 	return &MetadataModule{
 		logger:   c.CommandLogger("metadata", cmdName),
 		notifier: c.Notifier,
+		out:      c.Out,
 	}
 }
 
@@ -255,9 +258,9 @@ func (m *MetadataModule) QueryHash(workspaceDir string, collections, sha256s []s
 		return err
 	}
 
-	fmt.Println("RESULTS")
+	fmt.Fprintln(m.out, "RESULTS")
 	for i, h := range hashes {
-		fmt.Println(i+1, h.Sha256, "/", h.Md5, "/", h.Sha1, "/", h.Description)
+		fmt.Fprintln(m.out, i+1, h.Sha256, "/", h.Md5, "/", h.Sha1, "/", h.Description)
 	}
 
 	return nil
@@ -280,9 +283,9 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 		if err != nil {
 			return err
 		}
-		fmt.Println("Latest sessions: ")
+		fmt.Fprintln(m.out, "Latest sessions: ")
 		for _, s := range sessions {
-			fmt.Printf("%s %v\n", s.ID, s.Time)
+			fmt.Fprintf(m.out, "%s %v\n", s.ID, s.Time)
 		}
 		return nil
 	}
@@ -296,7 +299,7 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 		return err
 	}
 	if session == nil {
-		fmt.Println("Session not found.")
+		fmt.Fprintln(m.out, "Session not found.")
 		return nil
 	}
 	sessionChanges, err := ctx.CountSessionChanges(sid)
@@ -304,14 +307,14 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 		return err
 	}
 
-	fmt.Println("DETAILS")
-	fmt.Println("Time: ", session.Time)
-	fmt.Println("-----------------")
-	fmt.Println("CHANGES")
-	fmt.Println("Hash:    ", sessionChanges.Hash)
-	fmt.Println("Mapping: ", sessionChanges.Mapping)
-	fmt.Println("Set:     ", sessionChanges.Set)
-	fmt.Println("SetHash: ", sessionChanges.SetHash)
+	fmt.Fprintln(m.out, "DETAILS")
+	fmt.Fprintln(m.out, "Time: ", session.Time)
+	fmt.Fprintln(m.out, "-----------------")
+	fmt.Fprintln(m.out, "CHANGES")
+	fmt.Fprintln(m.out, "Hash:    ", sessionChanges.Hash)
+	fmt.Fprintln(m.out, "Mapping: ", sessionChanges.Mapping)
+	fmt.Fprintln(m.out, "Set:     ", sessionChanges.Set)
+	fmt.Fprintln(m.out, "SetHash: ", sessionChanges.SetHash)
 
 	return nil
 }
@@ -333,9 +336,9 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("ALL SETS: ")
+		fmt.Fprintln(m.out, "ALL SETS: ")
 		for _, s := range sets {
-			fmt.Printf("%s %v\n", s.ID, s.Name)
+			fmt.Fprintf(m.out, "%s %v\n", s.ID, s.Name)
 		}
 		return nil
 	}
@@ -345,7 +348,7 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 		return err
 	}
 	if len(sets) == 0 {
-		fmt.Println("Set not found.")
+		fmt.Fprintln(m.out, "Set not found.")
 		return nil
 	}
 	hashes, err := ctx.GetHashesInSets([]string{setName}, []string{}, false)
@@ -353,12 +356,12 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 		return err
 	}
 
-	fmt.Println("DETAILS")
-	fmt.Println("ID: ", sets[0].ID)
-	fmt.Println("-----------------")
-	fmt.Println("RESULTS")
+	fmt.Fprintln(m.out, "DETAILS")
+	fmt.Fprintln(m.out, "ID: ", sets[0].ID)
+	fmt.Fprintln(m.out, "-----------------")
+	fmt.Fprintln(m.out, "RESULTS")
 	for i, h := range hashes {
-		fmt.Println(i+1, h.Sha256, "/", h.Md5, "/", h.Sha1, "/", h.Description)
+		fmt.Fprintln(m.out, i+1, h.Sha256, "/", h.Md5, "/", h.Sha1, "/", h.Description)
 	}
 
 	return nil

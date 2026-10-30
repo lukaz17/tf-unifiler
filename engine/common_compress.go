@@ -18,6 +18,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,7 +38,7 @@ import (
 // Pack inputs (files/folders) into an archive.
 func createArchive(
 	inputs []string, archive string, format string, level compression.Level, solid nullable.Bool, dictSize int, password string, threads nullable.Int, move bool,
-	pathConfig *config.PathConfig, logger zerolog.Logger, notifier diag.Notifier, tuiMode bool,
+	pathConfig *config.PathConfig, logger zerolog.Logger, notifier diag.Notifier, in io.Reader, out io.Writer, tuiMode bool,
 ) error {
 	p := diag.NewProgressTracker("Pack files", notifier)
 	defer p.Done()
@@ -82,7 +83,10 @@ func createArchive(
 		return errors.New("unsupported archive format: " + format)
 	}
 
-	_, err := exec.Run(executable, args, !tuiMode)
+	if tuiMode {
+		in, out = nil, nil
+	}
+	_, err := exec.Run(executable, args, in, out)
 	if err != nil {
 		return err
 	}
@@ -114,7 +118,7 @@ func getArchiveName(input string, ext string) string {
 // Multi-pack inputs (files/folders) into an archives.
 func packFiles(
 	inputs []string, output string, format string, level compression.Level, solid nullable.Bool, dictSize int, password string, threadNum nullable.Int, move bool, normalize bool, separate bool,
-	pathConfig *config.PathConfig, logger zerolog.Logger, notifier diag.Notifier, tuiMode bool,
+	pathConfig *config.PathConfig, logger zerolog.Logger, notifier diag.Notifier, in io.Reader, out io.Writer, tuiMode bool,
 ) ([]string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -149,7 +153,7 @@ func packFiles(
 					}
 				}
 			}
-			if err := createArchive([]string{sInput}, archivePath, format, level, solid, dictSize, password, threadNum, move, pathConfig, logger, notifier, tuiMode); err != nil {
+			if err := createArchive([]string{sInput}, archivePath, format, level, solid, dictSize, password, threadNum, move, pathConfig, logger, notifier, in, out, tuiMode); err != nil {
 				return nil, err
 			}
 			if move {
@@ -174,7 +178,7 @@ func packFiles(
 				}
 			}
 		}
-		if err := createArchive(inputs, output, format, level, solid, dictSize, password, threadNum, move, pathConfig, logger, notifier, tuiMode); err != nil {
+		if err := createArchive(inputs, output, format, level, solid, dictSize, password, threadNum, move, pathConfig, logger, notifier, in, out, tuiMode); err != nil {
 			return nil, err
 		}
 		results = append(results, output)
