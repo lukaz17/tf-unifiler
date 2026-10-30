@@ -94,6 +94,7 @@ func DefaultConfig() (*koanf.Koanf, error) {
 				HTTP: &HTTPConfig{
 					Port: 8080,
 				},
+				Autostart:   true,
 				Concurrency: 1,
 				Backlog:     256,
 			},

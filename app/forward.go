@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package main
+package app
 
 import (
 	"context"
@@ -28,18 +28,18 @@ import (
 	"github.com/tforceaio/tf-unifiler/server"
 )
 
-// queueFlagName is the name of the global --queue bool flag that forwards a command to the running server instead of executing it immediately.
+// queueFlagName is the name of the global bool flag that determine execution is deferred or immediate.
 const queueFlagName = "queue"
 
-// errStopQueuePlanning aborts the isDeferred dry run once Cobra has parsed and validated the command, before any command body runs.
-var errStopQueuePlanning = errors.New("stop queue planning")
+// errStopDeferredChecking aborts the isDeferred dry run once Cobra has parsed and validated the command, before any command body runs.
+var errStopDeferredChecking = errors.New("stop queue flag checking")
 
-// Check args for the --queue flag to decide whether execution is deferred or immediate.
+// Check args for the --queue flag to determine whether execution is deferred or immediate.
 // Mutates the root command to inject a PersistentPreRunE that dry-runs Cobra; do not reuse it in a later call.
 func isDeferred(root *cobra.Command, args []string) (queued bool, err error) {
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		queued, _ = cmd.Flags().GetBool(queueFlagName)
-		return errStopQueuePlanning
+		return errStopDeferredChecking
 	}
 	root.SilenceErrors = true
 	root.SilenceUsage = true
@@ -48,27 +48,10 @@ func isDeferred(root *cobra.Command, args []string) (queued bool, err error) {
 	root.SetErr(io.Discard)
 
 	err = root.Execute()
-	if errors.Is(err, errStopQueuePlanning) {
+	if errors.Is(err, errStopDeferredChecking) {
 		return queued, nil
 	}
 	return false, err
-}
-
-// Return a new args slice with all instances of the --queue flag removed.
-func stripQueueFlag(args []string) []string {
-	queueFlag := "--" + queueFlagName
-	rest := make([]string, 0, len(args))
-	for i, a := range args {
-		switch {
-		case a == "--":
-			return append(rest, args[i:]...)
-		case a == queueFlag || strings.HasPrefix(a, queueFlag+"="):
-			// Client-only flag: drop it.
-		default:
-			rest = append(rest, a)
-		}
-	}
-	return rest
 }
 
 // Forward args to the running TFunifiler server to be enqueued.
@@ -89,7 +72,20 @@ func runQueued(args []string) error {
 
 	st, err := client.Status(ctx)
 	if err != nil {
-		return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d; is 'unifiler serve' running? (%w)", port, err)
+		if !cfg.Server.Autostart {
+			return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d; is 'unifiler serve' running? (%w)", port, err)
+		}
+		lock := server.NewLock(cfg.ConfigDir)
+		probe := func(ctx context.Context) error {
+			_, perr := client.Status(ctx)
+			return perr
+		}
+		if serr := ensureServer(ctx, lock, probe, spawnServer, serverStartupTimeout, serverPollInterval); serr != nil {
+			return fmt.Errorf("auto-starting TFunifiler server on 127.0.0.1:%d: %w", port, serr)
+		}
+		if st, err = client.Status(ctx); err != nil {
+			return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d after auto-start (%w)", port, err)
+		}
 	}
 	if err := verifyServer(st, cfg.Server.Name, engine.Version()); err != nil {
 		return fmt.Errorf("not forwarding to the server on 127.0.0.1:%d: %w", port, err)
@@ -104,7 +100,24 @@ func runQueued(args []string) error {
 	return nil
 }
 
-// Reject a status document that does not belong to a matching TFunifiler server.
+// Return a new args slice with all instances of the --queue flag removed.
+func stripQueueFlag(args []string) []string {
+	queueFlag := "--" + queueFlagName
+	rest := make([]string, 0, len(args))
+	for i, a := range args {
+		switch {
+		case a == "--":
+			return append(rest, args[i:]...)
+		case a == queueFlag || strings.HasPrefix(a, queueFlag+"="):
+			// Client-only flag: drop it.
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest
+}
+
+// Validate status document that belong to a matching TFunifiler server.
 func verifyServer(st server.StatusResponse, wantService, wantVersion string) error {
 	if st.Service != wantService {
 		return fmt.Errorf("service %q does not match expected %q; it is not TFunifiler", st.Service, wantService)

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package main
+package app
 
 import (
 	"context"
@@ -35,7 +35,7 @@ import (
 
 const serverShutdownTimeout = 17 * time.Second
 
-// ServeModule starts the HTTP server and the task queue that backs it.
+// ServeModule starts the RPC server and the task queue that backs it.
 type ServeModule struct {
 	ctrl    *engine.Controller
 	cfg     *config.RootConfig
@@ -56,6 +56,13 @@ func NewServeModule(c *engine.Controller) *ServeModule {
 // Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
 func (m *ServeModule) Start() error {
 	addr := fmt.Sprintf(":%d", m.cfg.Server.HTTP.Port)
+
+	lock := server.NewLock(m.cfg.ConfigDir)
+	if err := lock.Acquire(); err != nil {
+		return err
+	}
+	defer lock.Release()
+
 	m.logger.Info().
 		Str("addr", addr).
 		Int("concurrency", m.cfg.Server.Concurrency).
@@ -82,7 +89,7 @@ func (m *ServeModule) Start() error {
 		return err
 	case <-ctx.Done():
 		stop()
-		m.logger.Info().Msg("Shutdown signal received, stopping HTTP server.")
+		m.logger.Info().Msg("Shutdown signal received, stopping RPC server.")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
 		queueErr := m.queue.Shutdown(shutdownCtx)

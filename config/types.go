@@ -50,6 +50,7 @@ type PathConfig struct {
 type ServerConfig struct {
 	Name        string      `koanf:"name"`
 	HTTP        *HTTPConfig `koanf:"http"`
+	Autostart   bool        `koanf:"autostart"`
 	Concurrency int         `koanf:"concurrency"`
 	Backlog     int         `koanf:"backlog"`
 }

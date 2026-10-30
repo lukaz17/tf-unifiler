@@ -36,6 +36,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Path.ImageMagickPath != "magick" {
 		t.Errorf("Wrong ImageMagickPath. Expected '%s' Actual '%s'", "magick", cfg.Path.ImageMagickPath)
 	}
+	if !cfg.Server.Autostart {
+		t.Error("Wrong Server.Autostart. Expected default 'true' Actual 'false'")
+	}
 }
 
 func TestFileConfig(t *testing.T) {

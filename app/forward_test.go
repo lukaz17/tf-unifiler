@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package main
+package app
 
 import (
 	"reflect"
@@ -23,38 +23,6 @@ import (
 	"github.com/tforceaio/tf-unifiler/engine"
 	"github.com/tforceaio/tf-unifiler/server"
 )
-
-func TestStripQueueFlag(t *testing.T) {
-	cases := []struct {
-		name string
-		args []string
-		rest []string
-	}{
-		{"absent", []string{"file", "hash", "-i", "a.txt"}, []string{"file", "hash", "-i", "a.txt"}},
-		{"bare at end", []string{"file", "hash", "--queue"}, []string{"file", "hash"}},
-		{"bare in middle", []string{"file", "--queue", "hash"}, []string{"file", "hash"}},
-		{"bare leading", []string{"--queue", "file", "hash"}, []string{"file", "hash"}},
-		// A bool flag does not consume the next token: "true" stays a positional and is forwarded.
-		{"switch consumes no value", []string{"file", "hash", "--queue", "true"}, []string{"file", "hash", "true"}},
-		{"value true", []string{"file", "--queue=true"}, []string{"file"}},
-		{"value false", []string{"file", "--queue=false"}, []string{"file"}},
-		{"value 1", []string{"--queue=1"}, []string{}},
-		{"value 0", []string{"--queue=0"}, []string{}},
-		{"multiple occurrences", []string{"--queue", "file", "--queue=true", "hash"}, []string{"file", "hash"}},
-		// The first -- ends flag parsing: a later --queue is a literal positional and -- is preserved.
-		{"double dash keeps queue literal", []string{"--", "--queue"}, []string{"--", "--queue"}},
-		{"queue before dash, literal after", []string{"--queue", "file", "rename", "--", "--weird"}, []string{"file", "rename", "--", "--weird"}},
-		{"empty", nil, []string{}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			rest := stripQueueFlag(tc.args)
-			if !reflect.DeepEqual(rest, tc.rest) {
-				t.Errorf("stripQueueFlag(%v) = %v, want %v", tc.args, rest, tc.rest)
-			}
-		})
-	}
-}
 
 func TestIsDeferred(t *testing.T) {
 	cases := []struct {
@@ -94,27 +62,33 @@ func TestIsDeferred(t *testing.T) {
 	}
 }
 
-func TestVerifyServer(t *testing.T) {
-	const svc, ver = "tf-unifiler", "0.7.0.123-dev.abcd1234"
+func TestStripQueueFlag(t *testing.T) {
 	cases := []struct {
-		name    string
-		st      server.StatusResponse
-		wantErr bool
+		name string
+		args []string
+		rest []string
 	}{
-		{"match", server.StatusResponse{Service: svc, Version: ver}, false},
-		{"foreign service", server.StatusResponse{Service: "something-else", Version: ver}, true},
-		{"empty service", server.StatusResponse{Service: "", Version: ver}, true},
-		{"version mismatch", server.StatusResponse{Service: svc, Version: "0.6.0.1"}, true},
-		{"empty version", server.StatusResponse{Service: svc, Version: ""}, true},
+		{"absent", []string{"file", "hash", "-i", "a.txt"}, []string{"file", "hash", "-i", "a.txt"}},
+		{"bare at end", []string{"file", "hash", "--queue"}, []string{"file", "hash"}},
+		{"bare in middle", []string{"file", "--queue", "hash"}, []string{"file", "hash"}},
+		{"bare leading", []string{"--queue", "file", "hash"}, []string{"file", "hash"}},
+		// A bool flag does not consume the next token: "true" stays a positional and is forwarded.
+		{"switch consumes no value", []string{"file", "hash", "--queue", "true"}, []string{"file", "hash", "true"}},
+		{"value true", []string{"file", "--queue=true"}, []string{"file"}},
+		{"value false", []string{"file", "--queue=false"}, []string{"file"}},
+		{"value 1", []string{"--queue=1"}, []string{}},
+		{"value 0", []string{"--queue=0"}, []string{}},
+		{"multiple occurrences", []string{"--queue", "file", "--queue=true", "hash"}, []string{"file", "hash"}},
+		// The first -- ends flag parsing: a later --queue is a literal positional and -- is preserved.
+		{"double dash keeps queue literal", []string{"--", "--queue"}, []string{"--", "--queue"}},
+		{"queue before dash, literal after", []string{"--queue", "file", "rename", "--", "--weird"}, []string{"file", "rename", "--", "--weird"}},
+		{"empty", nil, []string{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := verifyServer(tc.st, svc, ver)
-			if tc.wantErr && err == nil {
-				t.Fatalf("verifyServer(%+v): expected error, got nil", tc.st)
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("verifyServer(%+v): unexpected error: %v", tc.st, err)
+			rest := stripQueueFlag(tc.args)
+			if !reflect.DeepEqual(rest, tc.rest) {
+				t.Errorf("stripQueueFlag(%v) = %v, want %v", tc.args, rest, tc.rest)
 			}
 		})
 	}
@@ -149,6 +123,32 @@ func TestStrippedArgsParseOnServerTree(t *testing.T) {
 			}
 			if err := cmd.ParseFlags(flags); err != nil {
 				t.Fatalf("server tree failed to parse %v: %v", rest, err)
+			}
+		})
+	}
+}
+
+func TestVerifyServer(t *testing.T) {
+	const svc, ver = "tf-unifiler", "0.7.0.123-dev.abcd1234"
+	cases := []struct {
+		name    string
+		st      server.StatusResponse
+		wantErr bool
+	}{
+		{"match", server.StatusResponse{Service: svc, Version: ver}, false},
+		{"foreign service", server.StatusResponse{Service: "something-else", Version: ver}, true},
+		{"empty service", server.StatusResponse{Service: "", Version: ver}, true},
+		{"version mismatch", server.StatusResponse{Service: svc, Version: "0.6.0.1"}, true},
+		{"empty version", server.StatusResponse{Service: svc, Version: ""}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := verifyServer(tc.st, svc, ver)
+			if tc.wantErr && err == nil {
+				t.Fatalf("verifyServer(%+v): expected error, got nil", tc.st)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("verifyServer(%+v): unexpected error: %v", tc.st, err)
 			}
 		})
 	}

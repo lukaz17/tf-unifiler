@@ -40,6 +40,7 @@ List of important folders, files and their roles in the project:
 ├── .github/            # GitHub configuration as code
 │   └── workflows/      # GitHub Actions release workflow
 ├── .vscode/            # Visual Studio Code configuration as code
+├── app/                # wiring root of the program: cobra root, rpc server, rpc dispatch
 ├── build/              # build driver (`ci.go` behind the go toolchain init)
 ├── config/             # global configuration from file, environment variables
 ├── core/               # project-level std lib
@@ -67,11 +68,9 @@ List of important folders, files and their roles in the project:
 ├── COPYING             # GPL-3.0 license text
 ├── COPYING.LESSER      # LGPL-3.0 license text
 ├── README.md           # project overview
-├── forward.go          # RPC dispatcher
 ├── go.mod              # Go module definition
 ├── go.sum              # Go module checksums
-├── main.go             # main program entry point
-└── serve.go            # RPC server entry point
+└── main.go             # program entry point
 ```
 
 ## Layer Dependencies

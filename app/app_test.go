@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package main
+package app
 
 import (
 	"testing"
@@ -21,8 +21,6 @@ import (
 	"github.com/tforceaio/tf-unifiler/engine"
 )
 
-// The CLI root is the engine's non-serve tree plus the serve command and the
-// client-only --queue flag that this package adds in buildRootCmd.
 func TestRootCommandWiring(t *testing.T) {
 	root := buildRootCmd()
 
@@ -49,7 +47,6 @@ func TestRootCommandWiring(t *testing.T) {
 	}
 }
 
-// RunTask dispatches through the engine tree, which has no serve command, so a serve task must fail rather than start a nested server.
 func TestServeIsNotRunnableAsTask(t *testing.T) {
 	c := engine.NewController(false)
 	defer c.Close()
