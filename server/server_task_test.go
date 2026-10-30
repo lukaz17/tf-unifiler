@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -34,6 +35,34 @@ func TestEnqueueAccepted(t *testing.T) {
 	w := do(s, http.MethodPost, "/tasks", `{"args":["checksum","create"]}`)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected %d, got %d (%s)", http.StatusAccepted, w.Code, w.Body.String())
+	}
+}
+
+func TestEnqueueAcceptsJSONContentTypeVariants(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{"charset parameter is accepted", "application/json; charset=utf-8"},
+		{"media type is matched case-insensitively", "Application/JSON"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func(args []string) (task.Task, error) {
+					return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
+				},
+			})
+			r := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(`{"args":["checksum","create"]}`))
+			r.Host = loopbackHost
+			r.Header.Set("Content-Type", tt.contentType)
+
+			w := serve(s, r)
+
+			if w.Code != http.StatusAccepted {
+				t.Errorf("expected %d, got %d (%s)", http.StatusAccepted, w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -77,6 +106,42 @@ func TestEnqueueInvalidBody(t *testing.T) {
 	w := do(s, http.MethodPost, "/tasks", `not json`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestEnqueueRejectsNonJSONContentType(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{"plain text a browser form can send is rejected", "text/plain"},
+		{"form encoding is rejected", "application/x-www-form-urlencoded"},
+		{"missing content type is rejected", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enqueued := false
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func([]string) (task.Task, error) {
+					enqueued = true
+					return task.Task{}, nil
+				},
+			})
+			r := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(`{"args":["checksum","create"]}`))
+			r.Host = loopbackHost
+			if tt.contentType != "" {
+				r.Header.Set("Content-Type", tt.contentType)
+			}
+
+			w := serve(s, r)
+
+			if w.Code != http.StatusUnsupportedMediaType {
+				t.Errorf("expected %d, got %d", http.StatusUnsupportedMediaType, w.Code)
+			}
+			if enqueued {
+				t.Error("a rejected request reached the queue")
+			}
+		})
 	}
 }
 

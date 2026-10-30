@@ -26,6 +26,8 @@ import (
 	"github.com/tforceaio/tf-unifiler/task"
 )
 
+const loopbackHost = "127.0.0.1:17017"
+
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	m.Run()
@@ -113,9 +115,8 @@ func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
 		r = httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 	}
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	return w
+	r.Host = loopbackHost
+	return serve(s, r)
 }
 
 // Report whether ch is closed, without blocking.
@@ -126,4 +127,11 @@ func isClosed(ch <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+// Serve r on s and return the recorded response.
+func serve(s *Server, r *http.Request) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	return w
 }

@@ -89,8 +89,11 @@ func (s *Server) router(apiKey string) *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(rejectCrossOrigin())
 	if apiKey != "" {
 		r.Use(requireAPIKey(apiKey))
+	} else {
+		r.Use(requireLoopbackHost())
 	}
 	r.GET("/status", s.handleStatus)
 	r.POST("/shutdown", s.handleShutdown)

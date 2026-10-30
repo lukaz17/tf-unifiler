@@ -17,6 +17,7 @@ package server
 
 import (
 	"errors"
+	"mime"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,12 @@ import (
 
 // Enqueue a new task.
 func (s *Server) handleEnqueue(c *gin.Context) {
+	// A browser sends a cross-origin JSON body only after a CORS preflight, which this server never grants; a form can send the same body as text/plain without one.
+	if mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type")); err != nil || mediaType != "application/json" {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "request body must be application/json"})
+		return
+	}
+
 	var req enqueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
