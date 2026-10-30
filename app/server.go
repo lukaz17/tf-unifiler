@@ -17,6 +17,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -40,10 +41,11 @@ import (
 
 const (
 	serverShutdownTimeout = 17 * time.Second
-	taskStatsInterval     = 250 * time.Millisecond // how often the terminal view refreshes its task counts.
+	serverStopTimeout     = serverShutdownTimeout + 3*time.Second // how long "server stop" waits: the server's shutdown budget plus slack for its teardown.
+	taskStatsInterval     = 250 * time.Millisecond                // how often the terminal view refreshes its task counts.
 )
 
-// ServerModule starts the RPC server and the task queue that backs it.
+// ServerModule runs the RPC server and the task queue that backs it, or stops a running one.
 type ServerModule struct {
 	ctrl    *engine.Controller
 	cfg     *config.RootConfig
@@ -53,15 +55,15 @@ type ServerModule struct {
 }
 
 // Return new ServerModule.
-func NewServerModule(c *engine.Controller) *ServerModule {
+func NewServerModule(c *engine.Controller, cmdName string) *ServerModule {
 	return &ServerModule{
 		ctrl:   c,
 		cfg:    c.Config,
-		logger: serverLogger(c),
+		logger: c.CommandLogger("server", cmdName),
 	}
 }
 
-// Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
+// Start the task queue and listen for RPC requests. Blocks until the server fails, or an interrupt/terminate signal or an RPC stop request triggers a graceful shutdown.
 func (m *ServerModule) Start() error {
 	host := m.cfg.Server.HTTP.Hostname
 	if err := checkListenAuth(host, m.cfg.Server.APIKey); err != nil {
@@ -115,14 +117,31 @@ func (m *ServerModule) Start() error {
 	case <-ctx.Done():
 		stop()
 		m.logger.Info().Msg("Shutdown signal received, stopping RPC server.")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
-		defer cancel()
-		queueErr := m.queue.Shutdown(shutdownCtx)
-		if err := m.httpSrv.Shutdown(shutdownCtx); err != nil {
-			return err
-		}
-		return queueErr
+	case <-m.httpSrv.ShutdownRequested():
+		stop()
+		m.logger.Info().Msg("Stop requested over RPC, stopping RPC server.")
 	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+	defer cancel()
+	queueErr := m.queue.Shutdown(shutdownCtx)
+	if err := m.httpSrv.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	return queueErr
+}
+
+// Ask the running server to shut down, and wait until it has stopped.
+func (m *ServerModule) Stop() error {
+	host := server.DialHost(m.cfg.Server.HTTP.Hostname)
+	addr := net.JoinHostPort(host, strconv.Itoa(m.cfg.Server.HTTP.Port))
+	client := server.NewClient("http://"+addr, m.cfg.Server.APIKey)
+
+	m.logger.Info().Str("addr", addr).Msg("Stopping RPC server.")
+	if err := stopServer(context.Background(), client, m.cfg.Server.Name, server.IsLoopback(host), serverStopTimeout, serverPollInterval); err != nil {
+		return fmt.Errorf("stopping the server on %s: %w", addr, err)
+	}
+	m.logger.Info().Str("addr", addr).Msg("RPC server stopped.")
+	return nil
 }
 
 // Show finished tasks against total tasks on the terminal with console logs printed above it; ctrl+c in the view calls onInterrupt.
@@ -130,8 +149,8 @@ func (m *ServerModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func
 	view := tui.RunProcessStatus(n, onInterrupt)
 	console := view.Writer(os.Stdout)
 	m.ctrl.RedirectConsoleLogs(console)
-	// m.logger was derived before the redirect and still writes to stdout directly.
-	m.logger = serverLogger(m.ctrl)
+	// m.logger was derived before the redirect and still writes to stdout directly; only Start shows this view.
+	m.logger = m.ctrl.CommandLogger("server", "start")
 	// gin writes its route list and recovered panics straight to these writers, read when server.New builds the router.
 	gin.DefaultWriter = console
 	gin.DefaultErrorWriter = console
@@ -191,7 +210,7 @@ func ServerCmd() *cobra.Command {
 	start := func(cmd *cobra.Command, args []string) error {
 		c := engine.InitAppWithBanner(context.TODO())
 		defer c.Close()
-		m := NewServerModule(c)
+		m := NewServerModule(c, "start")
 		return m.logError(m.Start())
 	}
 
@@ -212,6 +231,19 @@ func ServerCmd() *cobra.Command {
 	}
 	rootCmd.AddCommand(startCmd)
 
+	stopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the running RPC server.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := engine.InitAppWithBanner(context.TODO())
+			defer c.Close()
+			m := NewServerModule(c, "stop")
+			return m.logError(m.Stop())
+		},
+	}
+	rootCmd.AddCommand(stopCmd)
+
 	return rootCmd
 }
 
@@ -223,7 +255,38 @@ func checkListenAuth(host, apiKey string) error {
 	return nil
 }
 
-// Return the logger of the server start command.
-func serverLogger(c *engine.Controller) zerolog.Logger {
-	return c.CommandLogger("server", "start")
+// Ask the server behind client to shut down once its status shows it is wantService, then wait until it stops answering.
+// For a local server, the wait also lasts until the process holding the server's lock exits, so a new server can take the lock right after.
+func stopServer(ctx context.Context, client *server.Client, wantService string, local bool, timeout, interval time.Duration) error {
+	st, err := client.Status(ctx)
+	if errors.Is(err, server.ErrUnauthorized) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("no TFunifiler server reachable (%w)", err)
+	}
+	if err := verifyService(st, wantService); err != nil {
+		return err
+	}
+	if err := client.Shutdown(ctx); err != nil {
+		return err
+	}
+
+	// The server reports its own config dir, which holds its lock even when it differs from this client's.
+	lock := server.NewLock(st.ConfigDir)
+	stopped := func(ctx context.Context) bool {
+		// A status request cut off by the deadline does not prove the server is gone.
+		if _, err := client.Status(ctx); err == nil || ctx.Err() != nil {
+			return false
+		}
+		if !local {
+			return true
+		}
+		_, alive := lock.Owner()
+		return !alive
+	}
+	if !pollUntil(ctx, stopped, timeout, interval) {
+		return fmt.Errorf("server did not stop within %s", timeout)
+	}
+	return nil
 }

@@ -18,6 +18,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,11 +41,14 @@ type Server struct {
 	http   *http.Server
 	info   StatusInfo
 	tasks  TaskService
+
+	shutdownReq  chan struct{} // closed once when a client requests a shutdown.
+	shutdownOnce sync.Once
 }
 
 // Entrypoint for creating a new Server listening on addr, backed by tasks.
 func New(addr, apiKey string, info StatusInfo, tasks TaskService) *Server {
-	s := &Server{info: info, tasks: tasks}
+	s := &Server{info: info, tasks: tasks, shutdownReq: make(chan struct{})}
 	s.engine = s.router(apiKey)
 	s.http = &http.Server{
 		Addr:    addr,
@@ -75,6 +79,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// Return a channel closed when a client requests a shutdown; the owner of this Server performs it.
+func (s *Server) ShutdownRequested() <-chan struct{} {
+	return s.shutdownReq
+}
+
 // Build the route table served by this Server.
 func (s *Server) router(apiKey string) *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
@@ -84,6 +93,7 @@ func (s *Server) router(apiKey string) *gin.Engine {
 		r.Use(requireAPIKey(apiKey))
 	}
 	r.GET("/status", s.handleStatus)
+	r.POST("/shutdown", s.handleShutdown)
 	r.POST("/tasks", s.handleEnqueue)
 	r.GET("/tasks", s.handleList)
 	r.GET("/tasks/:id", s.handleGet)
@@ -105,6 +115,12 @@ func (s *Server) handleStatus(c *gin.Context) {
 		PendingTasks: pending,
 		TotalTasks:   total,
 	})
+}
+
+// Signal the owner of this Server to shut it down. It does not wait for the shutdown, which waits in turn for this request to finish.
+func (s *Server) handleShutdown(c *gin.Context) {
+	s.shutdownOnce.Do(func() { close(s.shutdownReq) })
+	c.Status(http.StatusAccepted)
 }
 
 // StatusInfo is the static server identity reported by the status endpoint.

@@ -31,34 +31,22 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// fakeTasks is a controllable TaskService stub for handler tests.
-type fakeTasks struct {
-	enqueueFn func([]string) (task.Task, error)
-	getFn     func(string) (task.Task, bool)
-	listFn    func() []task.Task
-	cancelFn  func(string) error
-	clearFn   func() int
-	statsFn   func() (int, int)
-}
-
-func (f *fakeTasks) Enqueue(args []string) (task.Task, error) { return f.enqueueFn(args) }
-func (f *fakeTasks) Get(id string) (task.Task, bool)          { return f.getFn(id) }
-func (f *fakeTasks) List() []task.Task                        { return f.listFn() }
-func (f *fakeTasks) Cancel(id string) error                   { return f.cancelFn(id) }
-func (f *fakeTasks) Clear() int                               { return f.clearFn() }
-func (f *fakeTasks) Stats() (int, int)                        { return f.statsFn() }
-
-func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
-	var r *http.Request
-	if body == "" {
-		r = httptest.NewRequest(method, path, nil)
-	} else {
-		r = httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Content-Type", "application/json")
+func TestShutdownEndpoint(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if isClosed(s.ShutdownRequested()) {
+		t.Fatal("shutdown requested before any request")
 	}
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	return w
+
+	// A repeated request must not close the channel twice.
+	for i := 1; i <= 2; i++ {
+		if w := do(s, http.MethodPost, "/shutdown", ""); w.Code != http.StatusAccepted {
+			t.Fatalf("request %d: expected status %d, got %d", i, http.StatusAccepted, w.Code)
+		}
+	}
+
+	if !isClosed(s.ShutdownRequested()) {
+		t.Error("expected shutdown requested after a shutdown request")
+	}
 }
 
 func TestStatusEndpoint(t *testing.T) {
@@ -97,5 +85,45 @@ func TestUnknownRoute(t *testing.T) {
 	w := do(s, http.MethodGet, "/unknown", "")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+// fakeTasks is a controllable TaskService stub for handler tests.
+type fakeTasks struct {
+	enqueueFn func([]string) (task.Task, error)
+	getFn     func(string) (task.Task, bool)
+	listFn    func() []task.Task
+	cancelFn  func(string) error
+	clearFn   func() int
+	statsFn   func() (int, int)
+}
+
+func (f *fakeTasks) Enqueue(args []string) (task.Task, error) { return f.enqueueFn(args) }
+func (f *fakeTasks) Get(id string) (task.Task, bool)          { return f.getFn(id) }
+func (f *fakeTasks) List() []task.Task                        { return f.listFn() }
+func (f *fakeTasks) Cancel(id string) error                   { return f.cancelFn(id) }
+func (f *fakeTasks) Clear() int                               { return f.clearFn() }
+func (f *fakeTasks) Stats() (int, int)                        { return f.statsFn() }
+
+func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
+	var r *http.Request
+	if body == "" {
+		r = httptest.NewRequest(method, path, nil)
+	} else {
+		r = httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	return w
+}
+
+// Report whether ch is closed, without blocking.
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }

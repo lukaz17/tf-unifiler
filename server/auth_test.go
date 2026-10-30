@@ -65,6 +65,18 @@ func TestAPIKeyGuardsUnknownRoutes(t *testing.T) {
 	}
 }
 
+func TestAPIKeyGuardsShutdown(t *testing.T) {
+	s := New(":0", "s3cret", StatusInfo{}, &fakeTasks{})
+	w := do(s, http.MethodPost, "/shutdown", "")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+	if isClosed(s.ShutdownRequested()) {
+		t.Error("an unauthorized request requested a shutdown")
+	}
+}
+
 // Serve a GET of path on a server guarded by the key "s3cret", sending authorization as the Authorization header unless it is empty.
 func doAuthorized(path, authorization string) *httptest.ResponseRecorder {
 	s := New(":0", "s3cret", StatusInfo{}, &fakeTasks{

@@ -49,20 +49,29 @@ func ensureServer(ctx context.Context, lock *server.Lock, probe serverProbe, spa
 	return pollUntilReachable(ctx, probe, timeout, interval)
 }
 
-// Probe until the server is reachable, or the deadline passes, or ctx is done.
-func pollUntilReachable(ctx context.Context, probe serverProbe, timeout, interval time.Duration) error {
+// Check cond every interval until it reports true, or the deadline passes, or ctx is done; report whether cond became true.
+func pollUntil(ctx context.Context, cond func(ctx context.Context) bool, timeout, interval time.Duration) bool {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
-		if err := probe(ctx); err == nil {
-			return nil
+		if cond(ctx) {
+			return true
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("server did not become reachable within %s", timeout)
+			return false
 		case <-time.After(interval):
 		}
 	}
+}
+
+// Probe until the server is reachable, or the deadline passes, or ctx is done.
+func pollUntilReachable(ctx context.Context, probe serverProbe, timeout, interval time.Duration) error {
+	reachable := func(ctx context.Context) bool { return probe(ctx) == nil }
+	if !pollUntil(ctx, reachable, timeout, interval) {
+		return fmt.Errorf("server did not become reachable within %s", timeout)
+	}
+	return nil
 }
 
 // Launch "unifiler server start" as a detached background process.

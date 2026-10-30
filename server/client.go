@@ -75,6 +75,25 @@ func (c *Client) Enqueue(ctx context.Context, args []string) (task.Task, error) 
 	return out, nil
 }
 
+// Ask the server to shut down. It returns once the server accepts the request, before the server has stopped.
+func (c *Client) Shutdown(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/shutdown", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("server rejected shutdown (%s): %s", resp.Status, serverError(resp.Body))
+	}
+	return nil
+}
+
 // Fetch the server's status document.
 func (c *Client) Status(ctx context.Context) (StatusResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/status", nil)

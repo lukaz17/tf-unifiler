@@ -113,11 +113,19 @@ func stripQueueFlag(args []string) []string {
 
 // Validate status document that belong to a matching TFunifiler server.
 func verifyServer(st server.StatusResponse, wantService, wantVersion string) error {
-	if st.Service != wantService {
-		return fmt.Errorf("service %q does not match expected %q; it is not TFunifiler", st.Service, wantService)
+	if err := verifyService(st, wantService); err != nil {
+		return err
 	}
 	if st.Version != wantVersion {
 		return fmt.Errorf("server version %q does not match client %q; restart 'unifiler server' with this build", st.Version, wantVersion)
+	}
+	return nil
+}
+
+// Validate status document that belong to a TFunifiler server of any version.
+func verifyService(st server.StatusResponse, wantService string) error {
+	if st.Service != wantService {
+		return fmt.Errorf("service %q does not match expected %q; it is not TFunifiler", st.Service, wantService)
 	}
 	return nil
 }

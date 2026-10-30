@@ -98,6 +98,28 @@ func TestClientEnqueueQueueFull(t *testing.T) {
 	}
 }
 
+func TestClientShutdown(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	if err := NewClient(ts.URL, "").Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if !isClosed(s.ShutdownRequested()) {
+		t.Error("expected the server to see the shutdown request")
+	}
+}
+
+func TestClientShutdownRejected(t *testing.T) {
+	ts := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(ts.Close)
+
+	if err := NewClient(ts.URL, "").Shutdown(context.Background()); err == nil {
+		t.Fatal("expected error from a server without a shutdown route, got nil")
+	}
+}
+
 func TestClientStatusSendsAPIKey(t *testing.T) {
 	url := newKeyedTestServer(t, "s3cret")
 

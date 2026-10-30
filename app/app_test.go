@@ -56,8 +56,10 @@ func TestServerCommandResolution(t *testing.T) {
 	}{
 		{"server alone runs the shorthand", []string{"server"}, "unifiler server", false},
 		{"server start runs start", []string{"server", "start"}, "unifiler server start", false},
+		{"server stop runs stop", []string{"server", "stop"}, "unifiler server stop", false},
 		{"rejects an unknown server subcommand", []string{"server", "bogus"}, "", true},
 		{"rejects an argument to server start", []string{"server", "start", "bogus"}, "", true},
+		{"rejects an argument to server stop", []string{"server", "stop", "bogus"}, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +88,7 @@ func TestServerIsNotRunnableAsTask(t *testing.T) {
 	c := engine.NewController(false)
 	defer c.Close()
 
-	for _, args := range [][]string{{"server"}, {"server", "start"}} {
+	for _, args := range [][]string{{"server"}, {"server", "start"}, {"server", "stop"}} {
 		var sink discardWriter
 		if err := engine.RunTask(c, args, nil, &sink); err == nil {
 			t.Errorf("expected error running %q as a task, got nil", args)
