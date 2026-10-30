@@ -246,8 +246,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 
 // Decorator to log error occurred when calling handlers.
 func (m *VideoModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for Video module.

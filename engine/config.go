@@ -140,10 +140,7 @@ func (m *ConfigModule) Set(key, value string) error {
 
 // Decorator to log error occurred when calling handlers.
 func (m *ConfigModule) logError(err error) error {
-	if err != nil {
-		m.logger.Err(err).Msg("Unexpected error has occurred.")
-	}
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Write data to a file safely.

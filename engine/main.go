@@ -94,6 +94,9 @@ Licensed under GPL-3.0 license. See COPYING file along with this program for mor
 			buildDate.Year()),
 		Short:   "Cross platform file managements command line utility.",
 		Version: version(),
+
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 	rootCmd.AddCommand(ChecksumCmd())
 	rootCmd.AddCommand(ConfigCmd())
@@ -115,7 +118,9 @@ func RunTask(base *Controller, args []string, ctx context.Context, out io.Writer
 	root.SetArgs(args)
 	root.SetOut(out)
 	root.SetErr(out)
-	return root.ExecuteContext(ctx)
+	cmd, err := root.ExecuteContextC(ctx)
+	PrintError(out, cmd, err)
+	return err
 }
 
 // Return a task-scoped Controller from given ctx.

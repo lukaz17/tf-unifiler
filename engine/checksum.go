@@ -126,8 +126,7 @@ func (m *ChecksumModule) Create(inputs []string, outDir string, algorithms []str
 
 // Decorator to log error occurred when calling handlers.
 func (m *ChecksumModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for Checksum module.

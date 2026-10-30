@@ -35,8 +35,8 @@ func Main() {
 	}
 
 	rootCmd := buildRootCmd() // rootCmd cannot share the instance with isDeferred() because isDeferred() mutate it during execution
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+	if cmd, err := rootCmd.ExecuteC(); err != nil {
+		engine.PrintError(os.Stderr, cmd, err)
 		os.Exit(1)
 	}
 }

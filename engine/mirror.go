@@ -198,8 +198,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 
 // Decorator to log error occurred when calling handlers.
 func (m *MirrorModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Return directory path to store Mirror module's outputs inside Unifiler workspace.

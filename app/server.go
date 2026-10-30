@@ -199,10 +199,7 @@ func (m *ServerModule) trackTasks(n *tui.BubbleteaNotifier) func() {
 
 // Decorator to log error occurred when calling handlers.
 func (m *ServerModule) logError(err error) error {
-	if err != nil {
-		m.logger.Err(err).Msg("Unexpected error has occurred. Program will exit.")
-	}
-	return err
+	return engine.LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for Server module.

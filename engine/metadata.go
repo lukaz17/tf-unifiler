@@ -369,8 +369,7 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 
 // Decorator to log error occurred when calling handlers.
 func (m *MetadataModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Save hashing results to metadata database along with their respective collections.

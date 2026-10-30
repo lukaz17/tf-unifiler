@@ -274,8 +274,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 
 // Decorator to log error occurred when calling handlers.
 func (m *FileModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for File module.
