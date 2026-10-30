@@ -42,6 +42,12 @@ func TestDefaultConfig(t *testing.T) {
 	if !cfg.Server.Autostart {
 		t.Error("Wrong Server.Autostart. Expected default 'true' Actual 'false'")
 	}
+	if cfg.Server.HTTP.Hostname != "127.0.0.1" {
+		t.Errorf("Wrong Server.HTTP.Hostname. Expected '%s' Actual '%s'", "127.0.0.1", cfg.Server.HTTP.Hostname)
+	}
+	if cfg.Server.APIKey != "" {
+		t.Errorf("Wrong Server.APIKey. Expected '%s' Actual '%s'", "", cfg.Server.APIKey)
+	}
 }
 
 func TestFileConfig(t *testing.T) {
@@ -91,6 +97,8 @@ func TestFileConfig(t *testing.T) {
 func TestEnvConfig(t *testing.T) {
 	t.Setenv("TFUNIFILER_DEBUG", "true")
 	t.Setenv("TFUNIFILER_LOG_LEVEL", "warn")
+	t.Setenv("TFUNIFILER_SERVER_HTTP_HOSTNAME", "0.0.0.0")
+	t.Setenv("TFUNIFILER_SERVER_APIKEY", "s3cret")
 	cfg, err := buildConfig(true, filepath.Join(t.TempDir(), "unifiler.yaml"))
 	if err != nil {
 		t.Error("Error get config from env", err)
@@ -100,5 +108,11 @@ func TestEnvConfig(t *testing.T) {
 	}
 	if cfg.Logger.Level != "warn" {
 		t.Errorf("Wrong Logger.Level. Expected '%s' Actual '%s'", "warn", cfg.Logger.Level)
+	}
+	if cfg.Server.HTTP.Hostname != "0.0.0.0" {
+		t.Errorf("Wrong Server.HTTP.Hostname. Expected '%s' Actual '%s'", "0.0.0.0", cfg.Server.HTTP.Hostname)
+	}
+	if cfg.Server.APIKey != "s3cret" {
+		t.Errorf("Wrong Server.APIKey. Expected '%s' Actual '%s'", "s3cret", cfg.Server.APIKey)
 	}
 }

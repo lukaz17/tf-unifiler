@@ -26,7 +26,7 @@ import (
 )
 
 func TestEnqueueAccepted(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		enqueueFn: func(args []string) (task.Task, error) {
 			return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
 		},
@@ -38,7 +38,7 @@ func TestEnqueueAccepted(t *testing.T) {
 }
 
 func TestEnqueueEmptyArgsBadRequest(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrEmptyArgs },
 	})
 	w := do(s, http.MethodPost, "/tasks", `{"args":[]}`)
@@ -48,7 +48,7 @@ func TestEnqueueEmptyArgsBadRequest(t *testing.T) {
 }
 
 func TestEnqueueInvalidArgsBadRequest(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		enqueueFn: func([]string) (task.Task, error) {
 			return task.Task{}, fmt.Errorf("%w: %w", task.ErrInvalidArgs, errors.New("unknown flag: --bogus"))
 		},
@@ -63,7 +63,7 @@ func TestEnqueueInvalidArgsBadRequest(t *testing.T) {
 }
 
 func TestEnqueueQueueFull(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrQueueFull },
 	})
 	w := do(s, http.MethodPost, "/tasks", `{"args":["x"]}`)
@@ -73,7 +73,7 @@ func TestEnqueueQueueFull(t *testing.T) {
 }
 
 func TestEnqueueInvalidBody(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{})
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
 	w := do(s, http.MethodPost, "/tasks", `not json`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
@@ -81,7 +81,7 @@ func TestEnqueueInvalidBody(t *testing.T) {
 }
 
 func TestGetNotFound(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		getFn: func(string) (task.Task, bool) { return task.Task{}, false },
 	})
 	w := do(s, http.MethodGet, "/tasks/missing", "")
@@ -91,7 +91,7 @@ func TestGetNotFound(t *testing.T) {
 }
 
 func TestGetFound(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		getFn: func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusRunning}, true },
 	})
 	w := do(s, http.MethodGet, "/tasks/t1", "")
@@ -101,7 +101,7 @@ func TestGetFound(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		listFn: func() []task.Task { return []task.Task{{ID: "a"}, {ID: "b"}} },
 	})
 	w := do(s, http.MethodGet, "/tasks", "")
@@ -111,7 +111,7 @@ func TestList(t *testing.T) {
 }
 
 func TestCancelNotFound(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		cancelFn: func(string) error { return task.ErrNotFound },
 	})
 	w := do(s, http.MethodPost, "/tasks/missing/cancel", "")
@@ -121,7 +121,7 @@ func TestCancelNotFound(t *testing.T) {
 }
 
 func TestCancelFound(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		cancelFn: func(string) error { return nil },
 		getFn:    func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusCanceled}, true },
 	})
@@ -132,7 +132,7 @@ func TestCancelFound(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		clearFn: func() int { return 3 },
 	})
 	w := do(s, http.MethodDelete, "/tasks", "")

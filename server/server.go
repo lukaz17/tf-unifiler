@@ -43,9 +43,9 @@ type Server struct {
 }
 
 // Entrypoint for creating a new Server listening on addr, backed by tasks.
-func New(addr string, info StatusInfo, tasks TaskService) *Server {
+func New(addr, apiKey string, info StatusInfo, tasks TaskService) *Server {
 	s := &Server{info: info, tasks: tasks}
-	s.engine = s.router()
+	s.engine = s.router(apiKey)
 	s.http = &http.Server{
 		Addr:    addr,
 		Handler: s.engine,
@@ -76,10 +76,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // Build the route table served by this Server.
-func (s *Server) router() *gin.Engine {
+func (s *Server) router(apiKey string) *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
 	r := gin.New()
 	r.Use(gin.Recovery())
+	if apiKey != "" {
+		r.Use(requireAPIKey(apiKey))
+	}
 	r.GET("/status", s.handleStatus)
 	r.POST("/tasks", s.handleEnqueue)
 	r.GET("/tasks", s.handleList)

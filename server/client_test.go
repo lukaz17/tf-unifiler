@@ -17,6 +17,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,11 +47,11 @@ func TestClientStatus(t *testing.T) {
 
 func TestClientStatusUnreachable(t *testing.T) {
 	// A server that is created then immediately closed is not listening.
-	ts := httptest.NewServer(New(":0", StatusInfo{}, &fakeTasks{}).Handler())
+	ts := httptest.NewServer(New(":0", "", StatusInfo{}, &fakeTasks{}).Handler())
 	url := ts.URL
 	ts.Close()
 
-	if _, err := NewClient(url).Status(context.Background()); err == nil {
+	if _, err := NewClient(url, "").Status(context.Background()); err == nil {
 		t.Fatal("expected error contacting a closed server, got nil")
 	}
 }
@@ -62,7 +63,7 @@ func TestClientStatusForeignServer(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	st, err := NewClient(ts.URL).Status(context.Background())
+	st, err := NewClient(ts.URL, "").Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -97,10 +98,53 @@ func TestClientEnqueueQueueFull(t *testing.T) {
 	}
 }
 
+func TestClientStatusSendsAPIKey(t *testing.T) {
+	url := newKeyedTestServer(t, "s3cret")
+
+	st, err := NewClient(url, "s3cret").Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.Service != "tf-unifiler" {
+		t.Errorf("expected service %q, got %q", "tf-unifiler", st.Service)
+	}
+}
+
+func TestClientStatusWrongAPIKey(t *testing.T) {
+	url := newKeyedTestServer(t, "s3cret")
+
+	_, err := NewClient(url, "wrong").Status(context.Background())
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestClientEnqueueMissingAPIKey(t *testing.T) {
+	url := newKeyedTestServer(t, "s3cret")
+
+	_, err := NewClient(url, "").Enqueue(context.Background(), []string{"x"})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+// Stand up a real server handler guarded by apiKey over httptest and return its URL.
+func newKeyedTestServer(t *testing.T, apiKey string) string {
+	t.Helper()
+	ts := httptest.NewServer(New(":0", apiKey, StatusInfo{Service: "tf-unifiler"}, &fakeTasks{
+		statsFn: func() (int, int) { return 0, 0 },
+		enqueueFn: func(args []string) (task.Task, error) {
+			return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
+		},
+	}).Handler())
+	t.Cleanup(ts.Close)
+	return ts.URL
+}
+
 // Stand up a real server handler over httptest and return a client pointed at it.
 func newTestClient(t *testing.T, info StatusInfo, tasks TaskService) *Client {
 	t.Helper()
-	ts := httptest.NewServer(New(":0", info, tasks).Handler())
+	ts := httptest.NewServer(New(":0", "", info, tasks).Handler())
 	t.Cleanup(ts.Close)
-	return NewClient(ts.URL)
+	return NewClient(ts.URL, "")
 }

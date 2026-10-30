@@ -32,13 +32,15 @@ const clientTimeout = 5 * time.Second
 // Client talks to a running TFunifiler server over HTTP.
 type Client struct {
 	baseURL string
+	apiKey  string
 	http    *http.Client
 }
 
-// Return a new Client targeting the server at baseURL (e.g. "http://127.0.0.1:8080").
-func NewClient(baseURL string) *Client {
+// Return a new Client targeting the server at baseURL (e.g. "http://127.0.0.1:8080"), authenticating with apiKey unless it is empty.
+func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: baseURL,
+		apiKey:  apiKey,
 		http:    &http.Client{Timeout: clientTimeout},
 	}
 }
@@ -56,7 +58,7 @@ func (c *Client) Enqueue(ctx context.Context, args []string) (task.Task, error) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -80,7 +82,7 @@ func (c *Client) Status(ctx context.Context) (StatusResponse, error) {
 		return StatusResponse{}, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return StatusResponse{}, err
 	}
@@ -95,6 +97,22 @@ func (c *Client) Status(ctx context.Context) (StatusResponse, error) {
 		return StatusResponse{}, fmt.Errorf("decoding status response: %w", err)
 	}
 	return out, nil
+}
+
+// Send req with the API key attached, reporting a rejected key as ErrUnauthorized.
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		return nil, ErrUnauthorized
+	}
+	return resp, nil
 }
 
 // Extract the server's error message from a JSON body of the form {"error": "..."}, falling back to a generic note when it cannot be parsed.

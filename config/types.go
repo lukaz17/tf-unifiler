@@ -28,7 +28,8 @@ type RootConfig struct {
 
 // HTTPConfig contains configurations for HTTP server connection.
 type HTTPConfig struct {
-	Port int `koanf:"port"`
+	Hostname string `koanf:"hostname"`
+	Port     int    `koanf:"port"`
 }
 
 // LoggerConfig contains configurations for logging.
@@ -52,6 +53,7 @@ type ServerConfig struct {
 	Name        string      `koanf:"name"`
 	HTTP        *HTTPConfig `koanf:"http"`
 	Autostart   bool        `koanf:"autostart"`
+	APIKey      string      `koanf:"apikey"`
 	Concurrency int         `koanf:"concurrency"`
 	Backlog     int         `koanf:"backlog"`
 }

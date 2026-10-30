@@ -19,8 +19,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -59,14 +61,13 @@ func NewServeModule(c *engine.Controller) *ServeModule {
 	}
 }
 
-// Return the logger of the serve command.
-func serveLogger(c *engine.Controller) zerolog.Logger {
-	return c.CommandLogger("server", "serve")
-}
-
 // Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
 func (m *ServeModule) Start() error {
-	addr := fmt.Sprintf(":%d", m.cfg.Server.HTTP.Port)
+	host := m.cfg.Server.HTTP.Hostname
+	if err := checkListenAuth(host, m.cfg.Server.APIKey); err != nil {
+		return err
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(m.cfg.Server.HTTP.Port))
 
 	lock := server.NewLock(m.cfg.ConfigDir)
 	if err := lock.Acquire(); err != nil {
@@ -101,7 +102,7 @@ func (m *ServeModule) Start() error {
 	}
 
 	gin.SetMode(opx.Ternary(m.cfg.Debug, gin.DebugMode, gin.ReleaseMode))
-	m.httpSrv = server.New(addr, m.statusInfo(), m.queue)
+	m.httpSrv = server.New(addr, m.cfg.Server.APIKey, m.statusInfo(), m.queue)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -137,6 +138,22 @@ func (m *ServeModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func(
 	return view
 }
 
+// Gather the static identity reported by the server's status endpoint.
+func (m *ServeModule) statusInfo() server.StatusInfo {
+	pwd, _ := os.Getwd()
+	pwd, _ = filesys.GetAbsPath(pwd)
+	exec, _ := os.Executable()
+	exec, _ = filesys.GetAbsPath(exec)
+	return server.StatusInfo{
+		Service:    m.cfg.Server.Name,
+		Version:    engine.Version(),
+		WorkingDir: pwd,
+		ConfigDir:  m.cfg.ConfigDir,
+		Executable: exec,
+		Portable:   m.cfg.Portable,
+	}
+}
+
 // Refresh the view's task counts from the queue every taskStatsInterval, and return a function that stops refreshing and waits for it to end.
 func (m *ServeModule) trackTasks(n *tui.BubbleteaNotifier) func() {
 	quit := make(chan struct{})
@@ -161,22 +178,6 @@ func (m *ServeModule) trackTasks(n *tui.BubbleteaNotifier) func() {
 	}
 }
 
-// Gather the static identity reported by the server's status endpoint.
-func (m *ServeModule) statusInfo() server.StatusInfo {
-	pwd, _ := os.Getwd()
-	pwd, _ = filesys.GetAbsPath(pwd)
-	exec, _ := os.Executable()
-	exec, _ = filesys.GetAbsPath(exec)
-	return server.StatusInfo{
-		Service:    m.cfg.Server.Name,
-		Version:    engine.Version(),
-		WorkingDir: pwd,
-		ConfigDir:  m.cfg.ConfigDir,
-		Executable: exec,
-		Portable:   m.cfg.Portable,
-	}
-}
-
 // Decorator to log error occurred when calling handlers.
 func (m *ServeModule) logError(err error) error {
 	if err != nil {
@@ -198,4 +199,17 @@ func ServeCmd() *cobra.Command {
 		},
 	}
 	return serveCmd
+}
+
+// Refuse to listen beyond loopback without an API key, since anyone reaching the port could run tasks on this machine.
+func checkListenAuth(host, apiKey string) error {
+	if apiKey == "" && !server.IsLoopback(host) {
+		return fmt.Errorf("refusing to listen on %q without an API key; set server.apikey or use a loopback server.http.hostname", host)
+	}
+	return nil
+}
+
+// Return the logger of the serve command.
+func serveLogger(c *engine.Controller) zerolog.Logger {
+	return c.CommandLogger("server", "serve")
 }

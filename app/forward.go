@@ -17,7 +17,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -41,7 +44,7 @@ func isDeferred(root *cobra.Command, args []string) (bool, error) {
 }
 
 // Forward args to the running TFunifiler server to be enqueued.
-// It discovers the port from config, confirms the listener is TFunifiler, then enqueues the accepted task.
+// It discovers the address from config, confirms the listener is TFunifiler, then enqueues the accepted task.
 func runQueued(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("nothing to enqueue")
@@ -51,15 +54,20 @@ func runQueued(args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading configuration: %w", err)
 	}
-	port := cfg.Server.HTTP.Port
+	host := server.DialHost(cfg.Server.HTTP.Hostname)
+	addr := net.JoinHostPort(host, strconv.Itoa(cfg.Server.HTTP.Port))
 
 	ctx := context.Background()
-	client := server.NewClient(fmt.Sprintf("http://127.0.0.1:%d", port))
+	client := server.NewClient("http://"+addr, cfg.Server.APIKey)
 
 	st, err := client.Status(ctx)
+	if errors.Is(err, server.ErrUnauthorized) {
+		return fmt.Errorf("not forwarding to the server on %s: %w", addr, err)
+	}
 	if err != nil {
-		if !cfg.Server.Autostart {
-			return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d; is 'unifiler serve' running? (%w)", port, err)
+		// A server on another machine cannot be started from here.
+		if !cfg.Server.Autostart || !server.IsLoopback(host) {
+			return fmt.Errorf("no TFunifiler server reachable on %s; is 'unifiler serve' running? (%w)", addr, err)
 		}
 		lock := server.NewLock(cfg.ConfigDir)
 		probe := func(ctx context.Context) error {
@@ -67,14 +75,14 @@ func runQueued(args []string) error {
 			return perr
 		}
 		if serr := ensureServer(ctx, lock, probe, spawnServer, serverStartupTimeout, serverPollInterval); serr != nil {
-			return fmt.Errorf("auto-starting TFunifiler server on 127.0.0.1:%d: %w", port, serr)
+			return fmt.Errorf("auto-starting TFunifiler server on %s: %w", addr, serr)
 		}
 		if st, err = client.Status(ctx); err != nil {
-			return fmt.Errorf("no TFunifiler server reachable on 127.0.0.1:%d after auto-start (%w)", port, err)
+			return fmt.Errorf("no TFunifiler server reachable on %s after auto-start (%w)", addr, err)
 		}
 	}
 	if err := verifyServer(st, cfg.Server.Name, engine.Version()); err != nil {
-		return fmt.Errorf("not forwarding to the server on 127.0.0.1:%d: %w", port, err)
+		return fmt.Errorf("not forwarding to the server on %s: %w", addr, err)
 	}
 
 	t, err := client.Enqueue(ctx, args)

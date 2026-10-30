@@ -62,7 +62,7 @@ func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
 }
 
 func TestStatusEndpoint(t *testing.T) {
-	s := New(":0", StatusInfo{
+	s := New(":0", "", StatusInfo{
 		Service:    "tf-unifiler",
 		Version:    "1.2.3",
 		WorkingDir: "/wd",
@@ -93,7 +93,7 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestUnknownRoute(t *testing.T) {
-	s := New(":0", StatusInfo{}, &fakeTasks{})
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
 	w := do(s, http.MethodGet, "/unknown", "")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)

@@ -93,9 +93,11 @@ func DefaultConfig() (*koanf.Koanf, error) {
 			Server: &ServerConfig{
 				Name: "tf-unifiler",
 				HTTP: &HTTPConfig{
-					Port: 17017,
+					Hostname: "127.0.0.1",
+					Port:     17017,
 				},
 				Autostart:   true,
+				APIKey:      "",
 				Concurrency: 1,
 				Backlog:     256,
 			},
