@@ -42,17 +42,19 @@ type FileRenameMapping struct {
 
 // FileModule handles user requests related to batch processing files.
 type FileModule struct {
-	cfg      *config.RootConfig
-	notifier diag.Notifier
-	logger   zerolog.Logger
+	cfg         *config.RootConfig
+	interactive bool
+	notifier    diag.Notifier
+	logger      zerolog.Logger
 }
 
 // Return new FileModule.
 func NewFileModule(c *Controller, cmdName string) *FileModule {
 	return &FileModule{
-		cfg:      c.Config,
-		notifier: c.Notifier,
-		logger:   c.CommandLogger("file", cmdName),
+		cfg:         c.Config,
+		interactive: c.Interactive,
+		notifier:    c.Notifier,
+		logger:      c.CommandLogger("file", cmdName),
 	}
 }
 
@@ -122,7 +124,7 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	fmt.Printf("\nInputs:%s\n", fmtInputs.String())
 	fmt.Printf("\nOutput:\n - %s\n", output)
 
-	if tui.IsTTY() {
+	if m.interactive {
 		fmt.Println("")
 		opts, err := tui.RunCompressOptions(&tui.CompressOptionsValue{
 			ArchiveType:    format,

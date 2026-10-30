@@ -34,6 +34,8 @@ type Controller struct {
 	Logger   zerolog.Logger
 	Notifier diag.Notifier
 
+	Interactive bool
+
 	logFile *lumberjack.Logger
 }
 
@@ -49,8 +51,9 @@ func NewController(useFS bool) *Controller {
 	if err2 != nil {
 		logger.Err(err2).Msg("error initializing log file")
 	}
+	interactive := tui.IsTTY()
 	var notifier diag.Notifier
-	if tui.IsTTY() {
+	if interactive {
 		notifier = tui.NewBubbleteaNotifier()
 		hasher.SetNotify(notifier)
 		filesys.SetNotify(notifier)
@@ -60,7 +63,10 @@ func NewController(useFS bool) *Controller {
 		Config:   cfg,
 		Logger:   logger,
 		Notifier: notifier,
-		logFile:  logFile,
+
+		Interactive: interactive,
+
+		logFile: logFile,
 	}
 }
 
@@ -93,6 +99,9 @@ func (c *Controller) fork(out io.Writer) *Controller {
 		Config:   c.Config,
 		Logger:   diag.NewLoggerFromWriter(writer),
 		Notifier: c.Notifier,
-		logFile:  nil,
+
+		Interactive: false,
+
+		logFile: nil,
 	}
 }
