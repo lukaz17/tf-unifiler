@@ -65,13 +65,13 @@ func pollUntilReachable(ctx context.Context, probe serverProbe, timeout, interva
 	}
 }
 
-// Launch "unifiler serve" as a detached background process.
+// Launch "unifiler server start" as a detached background process.
 func spawnServer() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locating executable: %w", err)
 	}
-	cmd := exec.Command(exe, "serve")
+	cmd := exec.Command(exe, "server", "start")
 	cmd.SysProcAttr = detachSysProcAttr()
 
 	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)

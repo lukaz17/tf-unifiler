@@ -44,7 +44,7 @@ func Main() {
 // Assemble the program's root command.
 func buildRootCmd() *cobra.Command {
 	rootCmd := engine.BuildRootCmd()
-	rootCmd.AddCommand(ServeCmd())
+	rootCmd.AddCommand(ServerCmd())
 	rootCmd.PersistentFlags().Bool(queueFlagName, false, "Queue this command to the running TFunifiler server instead of executing immediately.")
 	return rootCmd
 }

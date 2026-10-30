@@ -67,7 +67,7 @@ func runQueued(args []string) error {
 	if err != nil {
 		// A server on another machine cannot be started from here.
 		if !cfg.Server.Autostart || !server.IsLoopback(host) {
-			return fmt.Errorf("no TFunifiler server reachable on %s; is 'unifiler serve' running? (%w)", addr, err)
+			return fmt.Errorf("no TFunifiler server reachable on %s; is 'unifiler server' running? (%w)", addr, err)
 		}
 		lock := server.NewLock(cfg.ConfigDir)
 		probe := func(ctx context.Context) error {
@@ -117,7 +117,7 @@ func verifyServer(st server.StatusResponse, wantService, wantVersion string) err
 		return fmt.Errorf("service %q does not match expected %q; it is not TFunifiler", st.Service, wantService)
 	}
 	if st.Version != wantVersion {
-		return fmt.Errorf("server version %q does not match client %q; restart 'unifiler serve' with this build", st.Version, wantVersion)
+		return fmt.Errorf("server version %q does not match client %q; restart 'unifiler server' with this build", st.Version, wantVersion)
 	}
 	return nil
 }

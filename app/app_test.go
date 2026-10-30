@@ -31,7 +31,7 @@ func TestRootCommandWiring(t *testing.T) {
 		"metadata": false,
 		"mirror":   false,
 		"video":    false,
-		"serve":    false,
+		"server":   false,
 	}
 	for _, c := range root.Commands() {
 		want[c.Name()] = true
@@ -47,13 +47,50 @@ func TestRootCommandWiring(t *testing.T) {
 	}
 }
 
-func TestServeIsNotRunnableAsTask(t *testing.T) {
+func TestServerCommandResolution(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantPath string
+		wantErr  bool
+	}{
+		{"server alone runs the shorthand", []string{"server"}, "unifiler server", false},
+		{"server start runs start", []string{"server", "start"}, "unifiler server start", false},
+		{"rejects an unknown server subcommand", []string{"server", "bogus"}, "", true},
+		{"rejects an argument to server start", []string{"server", "start", "bogus"}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := engine.DryRun(buildRootCmd(), tt.args)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("DryRun(%q): expected error, got nil", tt.args)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DryRun(%q): unexpected error: %v", tt.args, err)
+			}
+			if cmd == nil || cmd.RunE == nil {
+				t.Fatalf("DryRun(%q): expected a runnable command, got %v", tt.args, cmd)
+			}
+			if got := cmd.CommandPath(); got != tt.wantPath {
+				t.Errorf("DryRun(%q) command = %q, want %q", tt.args, got, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestServerIsNotRunnableAsTask(t *testing.T) {
 	c := engine.NewController(false)
 	defer c.Close()
 
-	var sink discardWriter
-	if err := engine.RunTask(c, []string{"serve"}, nil, &sink); err == nil {
-		t.Fatal("expected error running 'serve' as a task, got nil")
+	for _, args := range [][]string{{"server"}, {"server", "start"}} {
+		var sink discardWriter
+		if err := engine.RunTask(c, args, nil, &sink); err == nil {
+			t.Errorf("expected error running %q as a task, got nil", args)
+		}
 	}
 }
 

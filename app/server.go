@@ -43,8 +43,8 @@ const (
 	taskStatsInterval     = 250 * time.Millisecond // how often the terminal view refreshes its task counts.
 )
 
-// ServeModule starts the RPC server and the task queue that backs it.
-type ServeModule struct {
+// ServerModule starts the RPC server and the task queue that backs it.
+type ServerModule struct {
 	ctrl    *engine.Controller
 	cfg     *config.RootConfig
 	httpSrv *server.Server
@@ -52,17 +52,17 @@ type ServeModule struct {
 	logger  zerolog.Logger
 }
 
-// Return new ServeModule.
-func NewServeModule(c *engine.Controller) *ServeModule {
-	return &ServeModule{
+// Return new ServerModule.
+func NewServerModule(c *engine.Controller) *ServerModule {
+	return &ServerModule{
 		ctrl:   c,
 		cfg:    c.Config,
-		logger: serveLogger(c),
+		logger: serverLogger(c),
 	}
 }
 
 // Start the task queue and listen for RPC requests. Blocks until the server fails or an interrupt/terminate signal triggers a graceful shutdown.
-func (m *ServeModule) Start() error {
+func (m *ServerModule) Start() error {
 	host := m.cfg.Server.HTTP.Hostname
 	if err := checkListenAuth(host, m.cfg.Server.APIKey); err != nil {
 		return err
@@ -126,12 +126,12 @@ func (m *ServeModule) Start() error {
 }
 
 // Show finished tasks against total tasks on the terminal with console logs printed above it; ctrl+c in the view calls onInterrupt.
-func (m *ServeModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func()) *tui.TeaProgramHandle {
+func (m *ServerModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func()) *tui.TeaProgramHandle {
 	view := tui.RunProcessStatus(n, onInterrupt)
 	console := view.Writer(os.Stdout)
 	m.ctrl.RedirectConsoleLogs(console)
 	// m.logger was derived before the redirect and still writes to stdout directly.
-	m.logger = serveLogger(m.ctrl)
+	m.logger = serverLogger(m.ctrl)
 	// gin writes its route list and recovered panics straight to these writers, read when server.New builds the router.
 	gin.DefaultWriter = console
 	gin.DefaultErrorWriter = console
@@ -139,7 +139,7 @@ func (m *ServeModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func(
 }
 
 // Gather the static identity reported by the server's status endpoint.
-func (m *ServeModule) statusInfo() server.StatusInfo {
+func (m *ServerModule) statusInfo() server.StatusInfo {
 	pwd, _ := os.Getwd()
 	pwd, _ = filesys.GetAbsPath(pwd)
 	exec, _ := os.Executable()
@@ -155,7 +155,7 @@ func (m *ServeModule) statusInfo() server.StatusInfo {
 }
 
 // Refresh the view's task counts from the queue every taskStatsInterval, and return a function that stops refreshing and waits for it to end.
-func (m *ServeModule) trackTasks(n *tui.BubbleteaNotifier) func() {
+func (m *ServerModule) trackTasks(n *tui.BubbleteaNotifier) func() {
 	quit := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
@@ -179,26 +179,40 @@ func (m *ServeModule) trackTasks(n *tui.BubbleteaNotifier) func() {
 }
 
 // Decorator to log error occurred when calling handlers.
-func (m *ServeModule) logError(err error) error {
+func (m *ServerModule) logError(err error) error {
 	if err != nil {
 		m.logger.Err(err).Msg("Unexpected error has occurred. Program will exit.")
 	}
 	return err
 }
 
-// Define Cobra Command for Serve module.
-func ServeCmd() *cobra.Command {
-	serveCmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Start RPC server.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c := engine.InitAppWithBanner(context.TODO())
-			defer c.Close()
-			m := NewServeModule(c)
-			return m.logError(m.Start())
-		},
+// Define Cobra Command for Server module.
+func ServerCmd() *cobra.Command {
+	start := func(cmd *cobra.Command, args []string) error {
+		c := engine.InitAppWithBanner(context.TODO())
+		defer c.Close()
+		m := NewServerModule(c)
+		return m.logError(m.Start())
 	}
-	return serveCmd
+
+	// Running the group itself is the shorthand for "server start".
+	// NoArgs rejects a mistyped subcommand, which Cobra would otherwise pass to start as an argument.
+	rootCmd := &cobra.Command{
+		Use:   "server",
+		Short: "Manage RPC server; starts it when run without a subcommand.",
+		Args:  cobra.NoArgs,
+		RunE:  start,
+	}
+
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start RPC server.",
+		Args:  cobra.NoArgs,
+		RunE:  start,
+	}
+	rootCmd.AddCommand(startCmd)
+
+	return rootCmd
 }
 
 // Refuse to listen beyond loopback without an API key, since anyone reaching the port could run tasks on this machine.
@@ -209,7 +223,7 @@ func checkListenAuth(host, apiKey string) error {
 	return nil
 }
 
-// Return the logger of the serve command.
-func serveLogger(c *engine.Controller) zerolog.Logger {
-	return c.CommandLogger("server", "serve")
+// Return the logger of the server start command.
+func serverLogger(c *engine.Controller) zerolog.Logger {
+	return c.CommandLogger("server", "start")
 }
