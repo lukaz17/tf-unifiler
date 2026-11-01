@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const defaultOutputLimit = 64 * 1024 // bytes of captured output retained per task.
+const defaultOutputLimit = 64 * 1024 // latest bytes of captured output retained per task.
 
 var (
 	// ErrClosed is returned when enqueueing after the queue has shut down.
@@ -51,12 +52,16 @@ type Queue struct {
 	validator Validator
 	redactor  Redactor
 	workers   int
-	outLimit  int
-	logger    zerolog.Logger
+
+	outLimit      int
+	finishedLimit int
+
+	logger zerolog.Logger
 
 	mu        sync.Mutex
 	entries   map[string]*entry
 	order     []string
+	finished  []string // ids of the retained finished tasks, in the order they finished.
 	accepting bool
 	pending   chan string
 
@@ -76,7 +81,10 @@ func New(runner Runner, validator Validator, redactor Redactor, concurrency, bac
 		validator: validator,
 		redactor:  redactor,
 		workers:   concurrency,
-		outLimit:  defaultOutputLimit,
+
+		outLimit:      defaultOutputLimit,
+		finishedLimit: backlog,
+
 		logger:    logger,
 		entries:   make(map[string]*entry),
 		pending:   make(chan string, backlog),
@@ -242,6 +250,7 @@ func (q *Queue) Clear() int {
 		kept = append(kept, id)
 	}
 	q.order = kept
+	q.finished = nil // every retained finished task was just removed.
 	return removed
 }
 
@@ -278,6 +287,27 @@ func (q *Queue) lookup(id string) *entry {
 	return q.entries[id]
 }
 
+// Record the task with the given id as finished, then evict the tasks that finished earliest beyond finishedLimit.
+// A task Clear removed between reaching its final status and this call is not recorded.
+func (q *Queue) retainFinished(id string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.entries[id] == nil {
+		return
+	}
+	q.finished = append(q.finished, id)
+	for len(q.finished) > q.finishedLimit {
+		evicted := q.finished[0]
+		q.finished = q.finished[1:]
+		delete(q.entries, evicted)
+		if i := slices.Index(q.order, evicted); i >= 0 {
+			q.order = slices.Delete(q.order, i, i+1)
+		}
+		q.logger.Debug().Str("id", evicted).Msg("Task evicted.")
+	}
+}
+
 // Take the task with the given id off the backlog, execute it via the runner and record its final status.
 // A canceling task becomes canceled without running.
 // A stopping task ends canceled only when its runner returns the cancellation.
@@ -293,6 +323,7 @@ func (q *Queue) run(id string) {
 		e.status = StatusCanceled
 		e.finishedAt = time.Now().UTC()
 		e.mu.Unlock()
+		q.retainFinished(id)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -328,6 +359,7 @@ func (q *Queue) run(id string) {
 	e.mu.Unlock()
 
 	q.logger.Info().Str("id", id).Str("status", string(status)).Dur("duration", duration).Msg("Task finished.")
+	q.retainFinished(id)
 }
 
 // Isolate a task's panic so it cannot bring down the worker.

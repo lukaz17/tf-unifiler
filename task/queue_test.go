@@ -687,6 +687,87 @@ func TestClearKeepsStoppingTask(t *testing.T) {
 	}
 }
 
+func TestFinishedTasksBeyondBacklogAreEvicted(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 2, silentLogger())
+	q.Start()
+	var ids []string
+	for _, name := range []string{"a", "b", "c"} {
+		tsk := mustEnqueue(t, q, name)
+		waitForStatus(t, q, tsk.ID, StatusSucceeded)
+		ids = append(ids, tsk.ID)
+	}
+
+	waitFor(t, func() bool {
+		_, ok := q.Get(ids[0])
+		return !ok
+	})
+	var listed []string
+	for _, tsk := range q.List() {
+		listed = append(listed, tsk.ID)
+	}
+	if !slices.Equal(listed, ids[1:]) {
+		t.Errorf("expected the 2 latest finished tasks %v, got %v", ids[1:], listed)
+	}
+	if _, total := q.Stats(); total != 2 {
+		t.Errorf("expected total 2, got %d", total)
+	}
+}
+
+func TestEvictionFollowsFinishOrder(t *testing.T) {
+	release := make(chan struct{})
+	q := New(blockerRunner(release), nil, nil, 2, 2, silentLogger())
+	q.Start()
+	long := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, long.ID, StatusRunning)
+	var short []string
+	for _, name := range []string{"a", "b"} {
+		tsk := mustEnqueue(t, q, name)
+		waitForStatus(t, q, tsk.ID, StatusSucceeded)
+		short = append(short, tsk.ID)
+	}
+
+	close(release)
+
+	waitFor(t, func() bool {
+		_, ok := q.Get(short[0])
+		return !ok
+	})
+	if got, ok := q.Get(long.ID); !ok || got.Status != StatusSucceeded {
+		t.Errorf("expected the task enqueued first but finished last to stay %s, got found=%t status=%s", StatusSucceeded, ok, got.Status)
+	}
+	if _, ok := q.Get(short[1]); !ok {
+		t.Error("expected the task that finished second to stay")
+	}
+}
+
+func TestCanceledTaskCountsTowardFinishedLimit(t *testing.T) {
+	release := make(chan struct{})
+	q := New(blockerRunner(release), nil, nil, 1, 2, silentLogger())
+	q.Start()
+	blocker := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, blocker.ID, StatusRunning)
+	victim := mustEnqueue(t, q, "victim")
+	if err := q.Cancel(victim.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	close(release)
+	waitForStatus(t, q, victim.ID, StatusCanceled)
+
+	// Two more finished tasks push out the blocker, then the victim.
+	for _, name := range []string{"a", "b"} {
+		tsk := mustEnqueue(t, q, name)
+		waitForStatus(t, q, tsk.ID, StatusSucceeded)
+	}
+
+	waitFor(t, func() bool {
+		_, ok := q.Get(victim.ID)
+		return !ok
+	})
+	if _, total := q.Stats(); total != 2 {
+		t.Errorf("expected total 2, got %d", total)
+	}
+}
+
 func TestStatsCountsPendingAndTotal(t *testing.T) {
 	block := make(chan struct{})
 	// One worker: the first task runs and blocks, the rest stay queued.
