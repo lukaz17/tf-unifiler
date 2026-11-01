@@ -33,12 +33,16 @@ var (
 	ErrClosed = errors.New("task queue is closed")
 	// ErrEmptyArgs is returned when enqueueing a task with no arguments.
 	ErrEmptyArgs = errors.New("task arguments cannot be empty")
+	// ErrFinished is returned when changing a task that already finished.
+	ErrFinished = errors.New("task already finished")
 	// ErrInvalidArgs is returned when enqueueing a task whose arguments the queue's Validator rejects.
 	ErrInvalidArgs = errors.New("invalid task arguments")
 	// ErrNotFound is returned when no task matches the given id.
 	ErrNotFound = errors.New("task not found")
 	// ErrQueueFull is returned when the pending backlog is at capacity.
 	ErrQueueFull = errors.New("task queue is full")
+	// ErrStarted is returned when restoring a task that a worker already started.
+	ErrStarted = errors.New("task already started")
 )
 
 // Queue is an in-memory FIFO task queue processed by a fixed pool of workers.
@@ -88,7 +92,7 @@ func (q *Queue) Start() {
 	}
 }
 
-// Stop accepting new tasks, cancel pending and running tasks, and wait for the workers to drain, bounded by ctx.
+// Stop accepting new tasks, cancel every task as Cancel does, and wait for the workers to drain, bounded by ctx.
 func (q *Queue) Shutdown(ctx context.Context) error {
 	q.mu.Lock()
 	if q.accepting {
@@ -96,17 +100,7 @@ func (q *Queue) Shutdown(ctx context.Context) error {
 		close(q.pending)
 	}
 	for _, e := range q.entries {
-		e.mu.Lock()
-		switch e.status {
-		case StatusQueued:
-			e.status = StatusCanceled
-			e.finishedAt = time.Now().UTC()
-		case StatusRunning:
-			if e.cancel != nil {
-				e.cancel()
-			}
-		}
-		e.mu.Unlock()
+		e.requestCancel() // a finished task keeps its final status.
 	}
 	q.mu.Unlock()
 
@@ -189,29 +183,46 @@ func (q *Queue) List() []Task {
 	return tasks
 }
 
-// Mark a queued task canceled or signal a running task to stop (best-effort).
+// Mark a queued task canceling in place until a worker reaches it,
+// or signal a running task to stop (best-effort) and mark it stopping until its runner returns.
 func (q *Queue) Cancel(id string) error {
 	e := q.lookup(id)
 	if e == nil {
 		return ErrNotFound
 	}
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	switch e.status {
-	case StatusQueued:
-		e.status = StatusCanceled
-		e.finishedAt = time.Now().UTC()
-	case StatusRunning:
-		e.status = StatusCanceled
-		if e.cancel != nil {
-			e.cancel()
-		}
+	if !e.requestCancel() {
+		return ErrFinished
 	}
 	return nil
 }
 
-// Remove all terminal (succeeded/failed/canceled) tasks and return the number removed.
+// Return a canceling task to queued, keeping its place in the backlog.
+func (q *Queue) Restore(id string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	e := q.entries[id]
+	if e == nil {
+		return ErrNotFound
+	}
+	if !q.accepting {
+		return ErrClosed
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	switch {
+	case e.status == StatusCanceling:
+		e.status = StatusQueued
+	case e.isFinishedLocked():
+		return ErrFinished
+	case e.status == StatusRunning || e.status == StatusStopping:
+		return ErrStarted
+	}
+	return nil
+}
+
+// Remove all finished (succeeded, failed or canceled) tasks and return the number removed.
 func (q *Queue) Clear() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -223,7 +234,7 @@ func (q *Queue) Clear() int {
 		if e == nil {
 			continue
 		}
-		if e.isTerminal() {
+		if e.isFinished() {
 			delete(q.entries, id)
 			removed++
 			continue
@@ -234,7 +245,7 @@ func (q *Queue) Clear() int {
 	return removed
 }
 
-// Return the number of tasks not yet terminal (queued or running) and the total number of tasks currently tracked.
+// Return the number of tasks not yet finished (queued, canceling, running or stopping) and the total number of tasks currently tracked.
 func (q *Queue) Stats() (pending, total int) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -245,7 +256,7 @@ func (q *Queue) Stats() (pending, total int) {
 		if e == nil {
 			continue
 		}
-		if !e.isTerminal() {
+		if !e.isFinished() {
 			pending++
 		}
 	}
@@ -267,8 +278,10 @@ func (q *Queue) lookup(id string) *entry {
 	return q.entries[id]
 }
 
-// Execute the task with the given id via the runner and record its final status,
-// skipping one canceled before it starts; a Cancel landing mid-run wins over the runner's outcome.
+// Take the task with the given id off the backlog, execute it via the runner and record its final status.
+// A canceling task becomes canceled without running.
+// A stopping task ends canceled only when its runner returns the cancellation.
+// Otherwise it records the runner's outcome like any other run.
 func (q *Queue) run(id string) {
 	e := q.lookup(id)
 	if e == nil {
@@ -276,7 +289,9 @@ func (q *Queue) run(id string) {
 	}
 
 	e.mu.Lock()
-	if e.status == StatusCanceled {
+	if e.status == StatusCanceling {
+		e.status = StatusCanceled
+		e.finishedAt = time.Now().UTC()
 		e.mu.Unlock()
 		return
 	}
@@ -299,15 +314,14 @@ func (q *Queue) run(id string) {
 		e.cancel = nil
 	}
 	switch {
-	case e.status == StatusCanceled:
-		if runErr != nil && e.err == "" {
-			e.err = runErr.Error()
-		}
-	case runErr != nil:
-		e.status = StatusFailed
+	case runErr == nil:
+		e.status = StatusSucceeded
+	case e.status == StatusStopping && errors.Is(runErr, context.Canceled):
+		e.status = StatusCanceled
 		e.err = runErr.Error()
 	default:
-		e.status = StatusSucceeded
+		e.status = StatusFailed
+		e.err = runErr.Error()
 	}
 	status := e.status
 	duration := e.finishedAt.Sub(e.startedAt)

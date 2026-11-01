@@ -31,6 +31,7 @@ type TaskService interface {
 	Get(id string) (task.Task, bool)
 	List() []task.Task
 	Cancel(id string) error
+	Restore(id string) error
 	Clear() int
 	Stats() (pending, total int)
 }
@@ -102,6 +103,7 @@ func (s *Server) router(apiKey string) *gin.Engine {
 	r.GET("/tasks", s.handleList)
 	r.GET("/tasks/:id", s.handleGet)
 	r.POST("/tasks/:id/cancel", s.handleCancel)
+	r.POST("/tasks/:id/restore", s.handleRestore)
 	r.DELETE("/tasks", s.handleClear)
 	return r
 }

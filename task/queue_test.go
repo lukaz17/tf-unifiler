@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -99,6 +100,30 @@ func TestShutdownRejectsEnqueue(t *testing.T) {
 	}
 	if _, err := q.Enqueue([]string{"x"}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestShutdownCancelsTasks(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 1, 4, silentLogger())
+	q.Start()
+	running := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, running.ID, StatusRunning)
+	queued := mustEnqueue(t, q, "victim")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the blocker ignores its cancellation, so do not wait for it.
+
+	err := q.Shutdown(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if got, _ := q.Get(running.ID); got.Status != StatusStopping {
+		t.Errorf("expected running task %s, got %s", StatusStopping, got.Status)
+	}
+	if got, _ := q.Get(queued.ID); got.Status != StatusCanceling {
+		t.Errorf("expected queued task %s, got %s", StatusCanceling, got.Status)
 	}
 }
 
@@ -286,11 +311,14 @@ func TestCancelQueuedTask(t *testing.T) {
 	close(block)
 
 	waitFor(t, func() bool {
-		got, _ := q.Get(queued.ID)
-		return got.Status == StatusCanceled
+		pending, _ := q.Stats()
+		return pending == 0
 	})
 	if atomic.LoadInt32(&ran) != 0 {
 		t.Fatal("canceled queued task should not have run")
+	}
+	if got, _ := q.Get(queued.ID); got.Status != StatusCanceled {
+		t.Fatalf("expected status %s, got %s", StatusCanceled, got.Status)
 	}
 }
 
@@ -328,6 +356,282 @@ func TestCancelUnknownTask(t *testing.T) {
 	}
 }
 
+func TestCancelQueuedTaskIsCancelingUntilWorkerReachesIt(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 4, silentLogger())
+	tsk := mustEnqueue(t, q, "victim")
+
+	if err := q.Cancel(tsk.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	got, _ := q.Get(tsk.ID)
+	if got.Status != StatusCanceling {
+		t.Errorf("expected status %s, got %s", StatusCanceling, got.Status)
+	}
+	if got.FinishedAt != nil {
+		t.Errorf("expected no finish time while the task waits in the queue, got %v", got.FinishedAt)
+	}
+	q.Start()
+	waitForStatus(t, q, tsk.ID, StatusCanceled)
+	if got, _ := q.Get(tsk.ID); got.FinishedAt == nil {
+		t.Error("expected a finish time once the worker reached the task")
+	}
+}
+
+func TestCancelRunningTaskIsStoppingUntilRunnerReturns(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 1, 4, silentLogger())
+	q.Start()
+	tsk := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, tsk.ID, StatusRunning)
+
+	if err := q.Cancel(tsk.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	got, _ := q.Get(tsk.ID)
+	if got.Status != StatusStopping {
+		t.Errorf("expected status %s, got %s", StatusStopping, got.Status)
+	}
+	if got.FinishedAt != nil {
+		t.Errorf("expected no finish time while the runner still runs, got %v", got.FinishedAt)
+	}
+}
+
+func TestCanceledRunOutcome(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  func(ctx context.Context) error
+		want    Status
+		wantErr string
+	}{
+		{"runner completing anyway succeeds", func(context.Context) error { return nil }, StatusSucceeded, ""},
+		{"runner returning the cancellation is canceled", func(ctx context.Context) error { return ctx.Err() }, StatusCanceled, "context canceled"},
+		{"runner wrapping the cancellation is canceled", func(ctx context.Context) error { return fmt.Errorf("copying: %w", ctx.Err()) }, StatusCanceled, "copying: context canceled"},
+		{"runner failing for another reason fails", func(context.Context) error { return errors.New("boom") }, StatusFailed, "boom"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			started := make(chan struct{})
+			q := New(func(ctx context.Context, _ []string, _ io.Writer) error {
+				close(started)
+				<-ctx.Done()
+				return tt.result(ctx)
+			}, nil, nil, 1, 4, silentLogger())
+			q.Start()
+			tsk := mustEnqueue(t, q, "long")
+			<-started
+
+			if err := q.Cancel(tsk.ID); err != nil {
+				t.Fatalf("cancel: %v", err)
+			}
+
+			waitFor(t, func() bool {
+				got, _ := q.Get(tsk.ID)
+				return got.FinishedAt != nil
+			})
+			got, _ := q.Get(tsk.ID)
+			if got.Status != tt.want {
+				t.Errorf("expected status %s, got %s", tt.want, got.Status)
+			}
+			if got.Err != tt.wantErr {
+				t.Errorf("expected error %q, got %q", tt.wantErr, got.Err)
+			}
+		})
+	}
+}
+
+func TestCancelFinishedTask(t *testing.T) {
+	q, ids := finishedTasks(t)
+	for _, status := range []Status{StatusSucceeded, StatusFailed, StatusCanceled} {
+		t.Run(string(status)+" task stays "+string(status), func(t *testing.T) {
+			err := q.Cancel(ids[status])
+
+			got, _ := q.Get(ids[status])
+			if !errors.Is(err, ErrFinished) {
+				t.Errorf("expected ErrFinished, got %v", err)
+			}
+			if got.Status != status {
+				t.Errorf("expected status %s, got %s", status, got.Status)
+			}
+		})
+	}
+}
+
+func TestCancelAgainBeforeFinishingChangesNothing(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 1, 4, silentLogger())
+	q.Start()
+	running := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, running.ID, StatusRunning)
+	queued := mustEnqueue(t, q, "victim")
+	for _, id := range []string{running.ID, queued.ID} {
+		if err := q.Cancel(id); err != nil {
+			t.Fatalf("cancel: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		id   string
+		want Status
+	}{
+		{"stopping task stays stopping", running.ID, StatusStopping},
+		{"canceling task stays canceling", queued.ID, StatusCanceling},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := q.Cancel(tt.id)
+
+			got, _ := q.Get(tt.id)
+			if err != nil {
+				t.Errorf("expected no error, got %v", err)
+			}
+			if got.Status != tt.want {
+				t.Errorf("expected status %s, got %s", tt.want, got.Status)
+			}
+		})
+	}
+}
+
+func TestCancelingTaskKeepsBacklogSlot(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 1, silentLogger())
+	queued := mustEnqueue(t, q, "victim")
+	if err := q.Cancel(queued.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	_, err := q.Enqueue([]string{"new"})
+
+	if !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("expected ErrQueueFull, got %v", err)
+	}
+}
+
+func TestRestoreKeepsPlaceInQueue(t *testing.T) {
+	var mu sync.Mutex
+	order := []string{}
+	q := New(func(_ context.Context, args []string, _ io.Writer) error {
+		mu.Lock()
+		order = append(order, args[0])
+		mu.Unlock()
+		return nil
+	}, nil, nil, 1, 4, silentLogger())
+	first := mustEnqueue(t, q, "a")
+	mustEnqueue(t, q, "b")
+	if err := q.Cancel(first.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	err := q.Restore(first.ID)
+	q.Start()
+
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(order) == 2
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(order, []string{"a", "b"}) {
+		t.Fatalf("expected run order [a b], got %v", order)
+	}
+}
+
+func TestRestoreQueuedTaskChangesNothing(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 4, silentLogger())
+	queued := mustEnqueue(t, q, "x")
+
+	err := q.Restore(queued.ID)
+
+	got, _ := q.Get(queued.ID)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if got.Status != StatusQueued {
+		t.Errorf("expected status %s, got %s", StatusQueued, got.Status)
+	}
+}
+
+func TestRestoreStartedTask(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 2, 4, silentLogger())
+	q.Start()
+	running := mustEnqueue(t, q, "blocker")
+	stopping := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, running.ID, StatusRunning)
+	waitForStatus(t, q, stopping.ID, StatusRunning)
+	if err := q.Cancel(stopping.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		id   string
+		want Status
+	}{
+		{"running task stays running", running.ID, StatusRunning},
+		{"stopping task stays stopping", stopping.ID, StatusStopping},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := q.Restore(tt.id)
+
+			got, _ := q.Get(tt.id)
+			if !errors.Is(err, ErrStarted) {
+				t.Errorf("expected ErrStarted, got %v", err)
+			}
+			if got.Status != tt.want {
+				t.Errorf("expected status %s, got %s", tt.want, got.Status)
+			}
+		})
+	}
+}
+
+func TestRestoreFinishedTask(t *testing.T) {
+	q, ids := finishedTasks(t)
+	for _, status := range []Status{StatusSucceeded, StatusFailed, StatusCanceled} {
+		t.Run(string(status)+" task stays "+string(status), func(t *testing.T) {
+			err := q.Restore(ids[status])
+
+			got, _ := q.Get(ids[status])
+			if !errors.Is(err, ErrFinished) {
+				t.Errorf("expected ErrFinished, got %v", err)
+			}
+			if got.Status != status {
+				t.Errorf("expected status %s, got %s", status, got.Status)
+			}
+		})
+	}
+}
+
+func TestRestoreUnknownTask(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 4, silentLogger())
+	if err := q.Restore("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestRestoreAfterShutdown(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 4, silentLogger())
+	queued := mustEnqueue(t, q, "x")
+	if err := q.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	err := q.Restore(queued.ID)
+
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected ErrClosed, got %v", err)
+	}
+}
+
 func TestClearRemovesTerminalOnly(t *testing.T) {
 	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 8, silentLogger())
 	q.Start()
@@ -342,6 +646,44 @@ func TestClearRemovesTerminalOnly(t *testing.T) {
 	}
 	if _, ok := q.Get(tsk.ID); ok {
 		t.Fatal("cleared task should be gone")
+	}
+}
+
+func TestClearKeepsCancelingTask(t *testing.T) {
+	q := New(func(context.Context, []string, io.Writer) error { return nil }, nil, nil, 1, 4, silentLogger())
+	queued := mustEnqueue(t, q, "victim")
+	if err := q.Cancel(queued.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	removed := q.Clear()
+
+	if removed != 0 {
+		t.Errorf("expected 0 cleared, got %d", removed)
+	}
+	if _, ok := q.Get(queued.ID); !ok {
+		t.Error("canceling task should stay")
+	}
+}
+
+func TestClearKeepsStoppingTask(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 1, 4, silentLogger())
+	q.Start()
+	tsk := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, tsk.ID, StatusRunning)
+	if err := q.Cancel(tsk.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	removed := q.Clear()
+
+	if removed != 0 {
+		t.Errorf("expected 0 cleared, got %d", removed)
+	}
+	if _, ok := q.Get(tsk.ID); !ok {
+		t.Error("stopping task should stay")
 	}
 }
 
@@ -380,6 +722,27 @@ func TestStatsCountsPendingAndTotal(t *testing.T) {
 	})
 	if _, total := q.Stats(); total != 3 {
 		t.Fatalf("expected total 3 after completion, got %d", total)
+	}
+}
+
+func TestStatsCountsCancelingAndStoppingTasks(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	q := New(blockerRunner(release), nil, nil, 1, 4, silentLogger())
+	q.Start()
+	running := mustEnqueue(t, q, "blocker")
+	waitForStatus(t, q, running.ID, StatusRunning)
+	queued := mustEnqueue(t, q, "victim")
+	for _, id := range []string{running.ID, queued.ID} {
+		if err := q.Cancel(id); err != nil {
+			t.Fatalf("cancel: %v", err)
+		}
+	}
+
+	pending, total := q.Stats()
+
+	if pending != 2 || total != 2 {
+		t.Fatalf("expected 2 pending of 2, got %d of %d", pending, total)
 	}
 }
 
@@ -460,6 +823,68 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("condition not met before deadline")
+}
+
+// Wait until the task with the given id reaches status.
+func waitForStatus(t *testing.T, q *Queue, id string, status Status) {
+	t.Helper()
+	waitFor(t, func() bool {
+		got, _ := q.Get(id)
+		return got.Status == status
+	})
+}
+
+// Enqueue args on q, failing the test when the queue rejects them.
+func mustEnqueue(t *testing.T, q *Queue, args ...string) Task {
+	t.Helper()
+	tsk, err := q.Enqueue(args)
+	if err != nil {
+		t.Fatalf("enqueue %v: %v", args, err)
+	}
+	return tsk
+}
+
+// Return a Runner that holds any "blocker" task until release closes, ignoring its cancellation, and finishes any other task at once.
+func blockerRunner(release <-chan struct{}) Runner {
+	return func(_ context.Context, args []string, _ io.Writer) error {
+		if args[0] == "blocker" {
+			<-release
+		}
+		return nil
+	}
+}
+
+// Return a queue whose worker finished one succeeded, one failed and one canceled task, with their ids keyed by final status.
+func finishedTasks(t *testing.T) (*Queue, map[Status]string) {
+	t.Helper()
+	release := make(chan struct{})
+	q := New(func(_ context.Context, args []string, _ io.Writer) error {
+		switch args[0] {
+		case "blocker":
+			<-release
+		case "fail":
+			return errors.New("boom")
+		}
+		return nil
+	}, nil, nil, 1, 8, silentLogger())
+	q.Start()
+	mustEnqueue(t, q, "blocker")
+	succeeded := mustEnqueue(t, q, "ok")
+	failed := mustEnqueue(t, q, "fail")
+	canceled := mustEnqueue(t, q, "victim")
+	if err := q.Cancel(canceled.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	close(release)
+	waitFor(t, func() bool {
+		pending, _ := q.Stats()
+		return pending == 0
+	})
+	return q, map[Status]string{
+		StatusSucceeded: succeeded.ID,
+		StatusFailed:    failed.ID,
+		StatusCanceled:  canceled.ID,
+	}
 }
 
 // syncBuffer is a log sink the workers can write to while a test reads it.

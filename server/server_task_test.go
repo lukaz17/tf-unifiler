@@ -227,6 +227,42 @@ func TestCancelFound(t *testing.T) {
 	}
 }
 
+func TestCancelFinishedConflict(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		cancelFn: func(string) error { return task.ErrFinished },
+	})
+	w := do(s, http.MethodPost, "/tasks/t1/cancel", "")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected %d, got %d", http.StatusConflict, w.Code)
+	}
+}
+
+func TestRestore(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"canceling task is restored", nil, http.StatusOK},
+		{"unknown task is not found", task.ErrNotFound, http.StatusNotFound},
+		{"finished task conflicts", task.ErrFinished, http.StatusConflict},
+		{"started task conflicts", task.ErrStarted, http.StatusConflict},
+		{"closed queue is unavailable", task.ErrClosed, http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				restoreFn: func(string) error { return tt.err },
+				getFn:     func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusQueued}, true },
+			})
+			w := do(s, http.MethodPost, "/tasks/t1/restore", "")
+			if w.Code != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, w.Code)
+			}
+		})
+	}
+}
+
 func TestClear(t *testing.T) {
 	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		clearFn: func() int { return 3 },

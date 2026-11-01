@@ -141,6 +141,7 @@ func (idleTasks) Enqueue([]string) (task.Task, error) { return task.Task{}, task
 func (idleTasks) Get(string) (task.Task, bool)        { return task.Task{}, false }
 func (idleTasks) List() []task.Task                   { return nil }
 func (idleTasks) Cancel(string) error                 { return task.ErrNotFound }
+func (idleTasks) Restore(string) error                { return task.ErrNotFound }
 func (idleTasks) Clear() int                          { return 0 }
 func (idleTasks) Stats() (int, int)                   { return 0, 0 }
 

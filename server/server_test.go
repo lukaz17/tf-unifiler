@@ -103,6 +103,7 @@ type fakeTasks struct {
 	getFn     func(string) (task.Task, bool)
 	listFn    func() []task.Task
 	cancelFn  func(string) error
+	restoreFn func(string) error
 	clearFn   func() int
 	statsFn   func() (int, int)
 }
@@ -111,6 +112,7 @@ func (f *fakeTasks) Enqueue(args []string) (task.Task, error) { return f.enqueue
 func (f *fakeTasks) Get(id string) (task.Task, bool)          { return f.getFn(id) }
 func (f *fakeTasks) List() []task.Task                        { return f.listFn() }
 func (f *fakeTasks) Cancel(id string) error                   { return f.cancelFn(id) }
+func (f *fakeTasks) Restore(id string) error                  { return f.restoreFn(id) }
 func (f *fakeTasks) Clear() int                               { return f.clearFn() }
 func (f *fakeTasks) Stats() (int, int)                        { return f.statsFn() }
 

@@ -82,11 +82,34 @@ func (s *Server) handleGet(c *gin.Context) {
 func (s *Server) handleCancel(c *gin.Context) {
 	id := c.Param("id")
 	if err := s.tasks.Cancel(id); err != nil {
-		if errors.Is(err, task.ErrNotFound) {
+		switch {
+		case errors.Is(err, task.ErrNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-			return
+		case errors.Is(err, task.ErrFinished):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	t, _ := s.tasks.Get(id)
+	c.JSON(http.StatusOK, t)
+}
+
+// Restore a canceling task to queued.
+func (s *Server) handleRestore(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.tasks.Restore(id); err != nil {
+		switch {
+		case errors.Is(err, task.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		case errors.Is(err, task.ErrFinished), errors.Is(err, task.ErrStarted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, task.ErrClosed):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 	t, _ := s.tasks.Get(id)

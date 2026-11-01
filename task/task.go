@@ -23,11 +23,15 @@ import (
 )
 
 // Status is the lifecycle state of a task.
+// A task canceled while queued is canceling, it keeps its place in the backlog and can be restored until a worker reaches it and marks it canceled.
+// A running task asked to stop is stopping until its runner returns.
 type Status string
 
 const (
 	StatusQueued    Status = "queued"
+	StatusCanceling Status = "canceling"
 	StatusRunning   Status = "running"
+	StatusStopping  Status = "stopping"
 	StatusSucceeded Status = "succeeded"
 	StatusFailed    Status = "failed"
 	StatusCanceled  Status = "canceled"
@@ -71,11 +75,35 @@ type entry struct {
 	finishedAt time.Time
 }
 
-// Return whether the entry reached a terminal status (succeeded, failed, or canceled).
-func (e *entry) isTerminal() bool {
+// Return whether the entry is finished: it reached a final status (succeeded, failed, or canceled).
+func (e *entry) isFinished() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.isFinishedLocked()
+}
+
+// Report isFinished for a caller already holding e.mu.
+func (e *entry) isFinishedLocked() bool {
 	return e.status == StatusSucceeded || e.status == StatusFailed || e.status == StatusCanceled
+}
+
+// Ask the entry to stop: a queued task becomes canceling in place, a running one stopping with its context signaled.
+// A canceling or stopping entry is left as is; report false, changing nothing, when the entry already finished.
+func (e *entry) requestCancel() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	switch {
+	case e.status == StatusQueued:
+		e.status = StatusCanceling
+	case e.status == StatusRunning:
+		e.status = StatusStopping
+		if e.cancel != nil {
+			e.cancel()
+		}
+	case e.isFinishedLocked():
+		return false
+	}
+	return true
 }
 
 // Return an immutable copy of the entry's current state.
