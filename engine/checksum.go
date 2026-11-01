@@ -135,6 +135,7 @@ func ChecksumCmd() *cobra.Command {
 		Use:   "checksum",
 		Short: "Checksum file processing.",
 	}
+	MarkCommandQueueable(rootCmd)
 
 	createCmd := &cobra.Command{
 		Use:   "create <input>...",

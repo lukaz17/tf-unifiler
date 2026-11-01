@@ -30,6 +30,8 @@ var (
 	errNoCommandToRun = errors.New("arguments run no command (help, version or a command group)")
 )
 
+const queueableAnnotation = "unifiler_queueable" // command annotation allowing ValidateArgs to accept the command and its subcommands as tasks.
+
 // Run args through Cobra's parsing and validation on root without running any command body, and return the command that would run.
 // Return a nil command when Cobra handles args itself (help, version, or a command without a body).
 // Mutates root to inject a PersistentPreRunE; do not reuse it in a later call.
@@ -60,34 +62,37 @@ func DryRun(root *cobra.Command, args []string) (*cobra.Command, error) {
 	return nil, err
 }
 
-// Check that args run a command defined by the engine, by dry-running them on the engine's command tree.
-// Cobra's own help and completion commands are rejected: they run no module, and RedactArgs cannot resolve them to mask their args.
+// Mark cmd and its subcommands as queueable so ValidateArgs accepts them as tasks.
+func MarkCommandQueueable(cmd *cobra.Command) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[queueableAnnotation] = "true"
+}
+
+// Check that args run a queueable command, by dry-running them on the engine's command tree.
+// A command is rejected unless it or an ancestor is marked by MarkCommandQueueable, so a new command stays local until it opts in.
+// Cobra's own help and completion commands are never marked: they run no module, and RedactArgs cannot resolve them to mask their args.
 func ValidateArgs(args []string) error {
-	root := BuildRootCmd()
-	defined := commandSet(root) // taken before Execute adds Cobra's own commands to root.
-	cmd, err := DryRun(root, args)
+	cmd, err := DryRun(BuildRootCmd(), args)
 	if err != nil {
 		return err
 	}
 	if cmd == nil {
 		return errNoCommandToRun
 	}
-	if !defined[cmd] {
-		return fmt.Errorf("command %q is not supported", cmd.CommandPath())
+	if !isQueueable(cmd) {
+		return fmt.Errorf("command %q cannot run on the server", cmd.CommandPath())
 	}
 	return nil
 }
 
-// Return every command of the tree rooted at root, root included.
-func commandSet(root *cobra.Command) map[*cobra.Command]bool {
-	set := map[*cobra.Command]bool{}
-	var walk func(*cobra.Command)
-	walk = func(c *cobra.Command) {
-		set[c] = true
-		for _, sub := range c.Commands() {
-			walk(sub)
+// Report whether cmd or one of its ancestors is marked by MarkCommandQueueable.
+func isQueueable(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if _, ok := c.Annotations[queueableAnnotation]; ok {
+			return true
 		}
 	}
-	walk(root)
-	return set
+	return false
 }

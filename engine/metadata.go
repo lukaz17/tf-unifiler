@@ -507,6 +507,7 @@ func MetadataCmd() *cobra.Command {
 		Use:   "metadata",
 		Short: "Centralized file metadata database.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Directory contains Unifiler workspace.")
 
 	indexCmd := &cobra.Command{

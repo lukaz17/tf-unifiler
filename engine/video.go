@@ -255,6 +255,7 @@ func VideoCmd() *cobra.Command {
 		Use:   "video",
 		Short: "Batch processing video file.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringP("file", "i", "", "Input video file.")
 
 	infoCmd := &cobra.Command{

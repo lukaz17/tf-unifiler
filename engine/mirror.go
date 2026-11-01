@@ -212,6 +212,7 @@ func MirrorCmd() *cobra.Command {
 		Use:   "mirror",
 		Short: "Centralized file repository.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Directory contains Unifiler workspace.")
 
 	exportCmd := &cobra.Command{

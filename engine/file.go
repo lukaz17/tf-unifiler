@@ -283,6 +283,7 @@ func FileCmd() *cobra.Command {
 		Use:   "file",
 		Short: "Batch processing file.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringArrayP("inputs", "i", []string{}, "Files/Directories to process.")
 
 	hashCmd := &cobra.Command{
