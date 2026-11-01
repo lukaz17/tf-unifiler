@@ -32,3 +32,4 @@ profiles/
 
 # Project-specific
 .tests/
+/build/

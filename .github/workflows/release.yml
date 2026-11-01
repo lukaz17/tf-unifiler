@@ -92,6 +92,15 @@ jobs:
             -o ./build/arm64/$BINARY_NAME $CMD_NAME
           tar -cf - -C ./build/arm64 $BINARY_NAME | zstd -o ./build/arm64/$BINARY_NAME-$GIT_TAG-linux-arm64.tar.zst
 
+      - name: Build & Compress (Linux 386)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          GOOS=linux GOARCH=386 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$GIT_BRANCH" \
+            -o ./build/386/$BINARY_NAME $CMD_NAME
+          tar -cf - -C ./build/386 $BINARY_NAME | zstd -o ./build/386/$BINARY_NAME-$GIT_TAG-linux-386.tar.zst
+
       - name: Build & Compress (MacOS AMD64)
         if: matrix.os == 'macos-latest'
         run: |
@@ -129,6 +138,16 @@ jobs:
             -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$env:GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$env:GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$env:GIT_BRANCH" `
             -o ./build/arm64/$env:BINARY_NAME.exe $env:CMD_NAME
           Compress-Archive -Path ./build/arm64/$env:BINARY_NAME.exe -DestinationPath ./build/arm64/$env:BINARY_NAME-$env:GIT_TAG-windows-arm64.zip
+
+      - name: Build & Compress (Windows 386)
+        if: matrix.os == 'windows-latest'
+        run: |
+          $env:GOOS="windows"; $env:GOARCH="386"
+          go build `
+            -trimpath `
+            -ldflags "-s -w -X github.com/tforceaio/tf-unifiler/engine.gitCommit=$env:GIT_COMMIT -X github.com/tforceaio/tf-unifiler/engine.gitDate=$env:GIT_DATE -X github.com/tforceaio/tf-unifiler/engine.gitBranch=$env:GIT_BRANCH" `
+            -o ./build/386/$env:BINARY_NAME.exe $env:CMD_NAME
+          Compress-Archive -Path ./build/386/$env:BINARY_NAME.exe -DestinationPath ./build/386/$env:BINARY_NAME-$env:GIT_TAG-windows-386.zip
 
       # ==============================
       #   Upload artifacts
