@@ -92,7 +92,12 @@ func (s *Server) handleCancel(c *gin.Context) {
 		}
 		return
 	}
-	t, _ := s.tasks.Get(id)
+	t, ok := s.tasks.Get(id)
+	if !ok {
+		// A worker can finish the canceled task and a clear can remove it before this lookup.
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
 	c.JSON(http.StatusOK, t)
 }
 
@@ -112,7 +117,12 @@ func (s *Server) handleRestore(c *gin.Context) {
 		}
 		return
 	}
-	t, _ := s.tasks.Get(id)
+	t, ok := s.tasks.Get(id)
+	if !ok {
+		// A worker can finish the restored task and a clear can remove it before this lookup.
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
 	c.JSON(http.StatusOK, t)
 }
 

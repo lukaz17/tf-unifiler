@@ -263,6 +263,29 @@ func TestRestore(t *testing.T) {
 	}
 }
 
+func TestCancelAndRestoreTaskClearedMeanwhile(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"canceled task cleared before lookup is not found", "/tasks/t1/cancel"},
+		{"restored task cleared before lookup is not found", "/tasks/t1/restore"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				cancelFn:  func(string) error { return nil },
+				restoreFn: func(string) error { return nil },
+				getFn:     func(string) (task.Task, bool) { return task.Task{}, false },
+			})
+			w := do(s, http.MethodPost, tt.path, "")
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("expected %d, got %d (%s)", http.StatusNotFound, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestClear(t *testing.T) {
 	s := New(":0", "", StatusInfo{}, &fakeTasks{
 		clearFn: func() int { return 3 },

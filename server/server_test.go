@@ -89,6 +89,17 @@ func TestServerBoundsRequestReadTime(t *testing.T) {
 	}
 }
 
+func TestServerBoundsResponseWriteTime(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if s.http.WriteTimeout <= 0 {
+		t.Errorf("expected a positive WriteTimeout so a client that stops reading cannot hold a connection forever, got %v", s.http.WriteTimeout)
+	}
+	// The write deadline starts after the headers, so it must outlast the body read ReadTimeout allows.
+	if s.http.WriteTimeout <= s.http.ReadTimeout {
+		t.Errorf("expected WriteTimeout %v to exceed ReadTimeout %v", s.http.WriteTimeout, s.http.ReadTimeout)
+	}
+}
+
 func TestUnknownRoute(t *testing.T) {
 	s := New(":0", "", StatusInfo{}, &fakeTasks{})
 	w := do(s, http.MethodGet, "/unknown", "")

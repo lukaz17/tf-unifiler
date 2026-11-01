@@ -57,6 +57,7 @@ func New(addr, apiKey string, info StatusInfo, tasks TaskService) *Server {
 
 		ReadTimeout:       30 * time.Second, // whole request incl. body; bundled client gives up after clientTimeout.
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      60 * time.Second, // starts once the headers are read, so it spans the body read bounded by ReadTimeout plus a response as large as that body.
 		IdleTimeout:       60 * time.Second,
 	}
 	return s
