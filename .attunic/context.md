@@ -41,7 +41,6 @@ List of important folders, files and their roles in the project:
 │   └── workflows/      # GitHub Actions release workflow
 ├── .vscode/            # Visual Studio Code configuration as code
 ├── app/                # wiring root of the program: cobra root, rpc server, rpc dispatch
-├── build/              # build driver (`ci.go` behind the go toolchain init)
 ├── config/             # global configuration from file, environment variables
 ├── core/               # project-level std lib
 │   └── compression/    # file compression types and constants
@@ -66,7 +65,6 @@ List of important folders, files and their roles in the project:
 ├── AGENTS.md           # project AI agent entry point
 ├── CLAUDE.md           # project Claude Code entry point
 ├── COPYING             # GPL-3.0 license text
-├── COPYING.LESSER      # LGPL-3.0 license text
 ├── README.md           # project overview
 ├── go.mod              # Go module definition
 ├── go.sum              # Go module checksums
@@ -107,7 +105,7 @@ Common use cases include: Build, Test, Lint, Format, Install, ...
 
 ### Build
 
-- `go build -o ./build/bin/unifiler .` — build the program from the root package, output in `./build/bin` (append `.exe` on Windows).
+- `go build -o ./build/unifiler .` — build the program from the root package, output in `./build` (append `.exe` on Windows).
 
 ### Test
 
