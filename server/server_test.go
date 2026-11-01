@@ -82,6 +82,13 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
+func TestServerBoundsRequestReadTime(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if s.http.ReadTimeout <= 0 {
+		t.Errorf("expected a positive ReadTimeout so a slow body cannot hold a connection forever, got %v", s.http.ReadTimeout)
+	}
+}
+
 func TestUnknownRoute(t *testing.T) {
 	s := New(":0", "", StatusInfo{}, &fakeTasks{})
 	w := do(s, http.MethodGet, "/unknown", "")

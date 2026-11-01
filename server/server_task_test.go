@@ -109,6 +109,37 @@ func TestEnqueueInvalidBody(t *testing.T) {
 	}
 }
 
+func TestEnqueueBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int
+		wantCode int
+	}{
+		{"body at the limit is accepted", maxEnqueueBodySize, http.StatusAccepted},
+		{"body past the limit is rejected", maxEnqueueBodySize + 1, http.StatusRequestEntityTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enqueued := false
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func([]string) (task.Task, error) {
+					enqueued = true
+					return task.Task{ID: "t1", Status: task.StatusQueued}, nil
+				},
+			})
+
+			w := do(s, http.MethodPost, "/tasks", enqueueBodyOfSize(t, tt.size))
+
+			if w.Code != tt.wantCode {
+				t.Errorf("expected %d, got %d (%s)", tt.wantCode, w.Code, w.Body.String())
+			}
+			if want := tt.wantCode == http.StatusAccepted; enqueued != want {
+				t.Errorf("expected enqueued %v, got %v", want, enqueued)
+			}
+		})
+	}
+}
+
 func TestEnqueueRejectsNonJSONContentType(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -204,4 +235,15 @@ func TestClear(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
 	}
+}
+
+// Build a valid enqueue body of exactly size bytes by padding its only argument.
+func enqueueBodyOfSize(t *testing.T, size int) string {
+	t.Helper()
+	const prefix, suffix = `{"args":["`, `"]}`
+	pad := size - len(prefix) - len(suffix)
+	if pad < 0 {
+		t.Fatalf("size %d is below the %d-byte minimum body", size, len(prefix)+len(suffix))
+	}
+	return prefix + strings.Repeat("a", pad) + suffix
 }

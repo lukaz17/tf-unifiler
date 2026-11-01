@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,11 @@ import (
 )
 
 const clientTimeout = 5 * time.Second
+
+const maxResponseBodySize = 4 * maxEnqueueBodySize // bytes; a 202 echoes the task's args, which JSON grows by escaping & < > to six bytes each.
+
+// errResponseTooLarge is returned when a server's response body exceeds maxResponseBodySize.
+var errResponseTooLarge = errors.New("server response too large")
 
 // Client talks to a running TFunifiler server over HTTP.
 type Client struct {
@@ -69,7 +75,7 @@ func (c *Client) Enqueue(ctx context.Context, args []string) (task.Task, error) 
 	}
 
 	var out task.Task
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := decodeResponse(resp.Body, &out); err != nil {
 		return task.Task{}, fmt.Errorf("decoding enqueue response: %w", err)
 	}
 	return out, nil
@@ -112,13 +118,13 @@ func (c *Client) Status(ctx context.Context) (StatusResponse, error) {
 	}
 
 	var out StatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := decodeResponse(resp.Body, &out); err != nil {
 		return StatusResponse{}, fmt.Errorf("decoding status response: %w", err)
 	}
 	return out, nil
 }
 
-// Send req with the API key attached, reporting a rejected key as ErrUnauthorized.
+// Send req with the API key attached, reporting a rejected key as ErrUnauthorized and capping the response body at maxResponseBodySize.
 func (c *Client) do(req *http.Request) (*http.Response, error) {
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
@@ -131,7 +137,19 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 		resp.Body.Close()
 		return nil, ErrUnauthorized
 	}
+	// Status reads from whatever listens on the address before its identity is confirmed.
+	resp.Body = http.MaxBytesReader(nil, resp.Body, maxResponseBodySize)
 	return resp, nil
+}
+
+// Decode the JSON response body into v. A body past the cap set by do is reported as errResponseTooLarge, since http.MaxBytesError is worded for requests.
+func decodeResponse(body io.Reader, v any) error {
+	err := json.NewDecoder(body).Decode(v)
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return errResponseTooLarge
+	}
+	return err
 }
 
 // Extract the server's error message from a JSON body of the form {"error": "..."}, falling back to a generic note when it cannot be parsed.

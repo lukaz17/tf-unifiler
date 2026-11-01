@@ -16,6 +16,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -69,6 +70,26 @@ func TestClientStatusForeignServer(t *testing.T) {
 	}
 	if st.Service == "tf-unifiler" {
 		t.Errorf("foreign server should not report service %q", "tf-unifiler")
+	}
+}
+
+func TestClientStatusResponseTooLarge(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// An unterminated string keeps the decoder reading until the cap stops it.
+		_, _ = w.Write([]byte(`{"service":"`))
+		pad := bytes.Repeat([]byte("a"), 64<<10)
+		for written := 0; written <= maxResponseBodySize; written += len(pad) {
+			if _, err := w.Write(pad); err != nil {
+				return // client hung up at the cap.
+			}
+		}
+	}))
+	t.Cleanup(ts.Close)
+
+	_, err := NewClient(ts.URL, "").Status(context.Background())
+	if !errors.Is(err, errResponseTooLarge) {
+		t.Errorf("expected errResponseTooLarge, got %v", err)
 	}
 }
 

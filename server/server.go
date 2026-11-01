@@ -54,6 +54,7 @@ func New(addr, apiKey string, info StatusInfo, tasks TaskService) *Server {
 		Addr:    addr,
 		Handler: s.engine,
 
+		ReadTimeout:       30 * time.Second, // whole request incl. body; bundled client gives up after clientTimeout.
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

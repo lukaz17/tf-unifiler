@@ -24,6 +24,8 @@ import (
 	"github.com/tforceaio/tf-unifiler/task"
 )
 
+const maxEnqueueBodySize = 4 << 20 // bytes; fits Linux's default 2 MiB command line plus JSON quoting of each argument.
+
 // Enqueue a new task.
 func (s *Server) handleEnqueue(c *gin.Context) {
 	// A browser sends a cross-origin JSON body only after a CORS preflight, which this server never grants; a form can send the same body as text/plain without one.
@@ -32,8 +34,14 @@ func (s *Server) handleEnqueue(c *gin.Context) {
 		return
 	}
 
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxEnqueueBodySize)
 	var req enqueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
