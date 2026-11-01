@@ -18,26 +18,46 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tforceaio/tf-unifiler/task"
 )
+
+// TaskService is the subset of the task queue the HTTP layer depends on.
+type TaskService interface {
+	Enqueue(args []string) (task.Task, error)
+	Get(id string) (task.Task, bool)
+	List() []task.Task
+	Cancel(id string) error
+	Restore(id string) error
+	Clear() int
+	Stats() (pending, total int)
+}
 
 // Server is a thin wrapper around http.Server with pre-registered routes.
 type Server struct {
 	engine *gin.Engine
 	http   *http.Server
+	info   StatusInfo
+	tasks  TaskService
+
+	shutdownReq  chan struct{} // closed once when a client requests a shutdown.
+	shutdownOnce sync.Once
 }
 
-// Entrypoint for creating a new Server listening on addr.
-func New(addr string) *Server {
-	s := &Server{}
-	s.engine = s.router()
+// Entrypoint for creating a new Server listening on addr, backed by tasks.
+func New(addr, apiKey string, info StatusInfo, tasks TaskService) *Server {
+	s := &Server{info: info, tasks: tasks, shutdownReq: make(chan struct{})}
+	s.engine = s.router(apiKey)
 	s.http = &http.Server{
 		Addr:    addr,
 		Handler: s.engine,
 
+		ReadTimeout:       30 * time.Second, // whole request incl. body; bundled client gives up after clientTimeout.
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      60 * time.Second, // starts once the headers are read, so it spans the body read bounded by ReadTimeout plus a response as large as that body.
 		IdleTimeout:       60 * time.Second,
 	}
 	return s
@@ -62,13 +82,72 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// Return a channel closed when a client requests a shutdown; the owner of this Server performs it.
+func (s *Server) ShutdownRequested() <-chan struct{} {
+	return s.shutdownReq
+}
+
 // Build the route table served by this Server.
-func (s *Server) router() *gin.Engine {
+func (s *Server) router(apiKey string) *gin.Engine {
 	// gin.New() instead of Default: no built-in logger, project logs via zerolog.
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "ok")
-	})
+	r.Use(rejectCrossOrigin())
+	if apiKey != "" {
+		r.Use(requireAPIKey(apiKey))
+	} else {
+		r.Use(requireLoopbackHost())
+	}
+	r.GET("/status", s.handleStatus)
+	r.POST("/shutdown", s.handleShutdown)
+	r.POST("/tasks", s.handleEnqueue)
+	r.GET("/tasks", s.handleList)
+	r.GET("/tasks/:id", s.handleGet)
+	r.POST("/tasks/:id/cancel", s.handleCancel)
+	r.POST("/tasks/:id/restore", s.handleRestore)
+	r.DELETE("/tasks", s.handleClear)
 	return r
+}
+
+// Report the server's identity and live task counts.
+func (s *Server) handleStatus(c *gin.Context) {
+	pending, total := s.tasks.Stats()
+	c.JSON(http.StatusOK, StatusResponse{
+		Service:      s.info.Service,
+		Version:      s.info.Version,
+		WorkingDir:   s.info.WorkingDir,
+		ConfigDir:    s.info.ConfigDir,
+		Executable:   s.info.Executable,
+		Portable:     s.info.Portable,
+		PendingTasks: pending,
+		TotalTasks:   total,
+	})
+}
+
+// Signal the owner of this Server to shut it down. It does not wait for the shutdown, which waits in turn for this request to finish.
+func (s *Server) handleShutdown(c *gin.Context) {
+	s.shutdownOnce.Do(func() { close(s.shutdownReq) })
+	c.Status(http.StatusAccepted)
+}
+
+// StatusInfo is the static server identity reported by the status endpoint.
+type StatusInfo struct {
+	Service    string
+	Version    string
+	WorkingDir string
+	ConfigDir  string
+	Executable string
+	Portable   bool
+}
+
+// StatusResponse is the body returned by the status endpoint, shared by the client.
+type StatusResponse struct {
+	Service      string `json:"service"`
+	Version      string `json:"version"`
+	WorkingDir   string `json:"workingDir"`
+	ConfigDir    string `json:"configDir"`
+	Executable   string `json:"executable"`
+	Portable     bool   `json:"portable"`
+	PendingTasks int    `json:"pendingTasks"`
+	TotalTasks   int    `json:"totalTasks"`
 }

@@ -21,11 +21,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/tforce-io/tf-golib/multiarch"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/db"
 )
+
+const (
+	// fakeArchiverEnv makes the test binary act as an archiver that only prints fakeArchiverOutput, so pack runs without 7z.
+	fakeArchiverEnv    = "UNIFILER_FAKE_ARCHIVER"
+	fakeArchiverOutput = "fake archiver output"
+)
+
+func TestMain(m *testing.M) {
+	if os.Getenv(fakeArchiverEnv) == "1" {
+		fmt.Println(fakeArchiverOutput)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func getTestDB(entity, function string) *db.DbContext {
 	hasher := sha256.New()
@@ -40,7 +56,7 @@ func getTestDB(entity, function string) *db.DbContext {
 		"/tmp",
 	)
 	dbFile := filepath.Join(tmpDir, fileName)
-	ctx, err := db.Connect(dbFile)
+	ctx, err := db.Connect(dbFile, zerolog.Nop())
 	if err != nil {
 		panic(err)
 	}

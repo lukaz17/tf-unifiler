@@ -16,32 +16,142 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/tforceaio/tf-unifiler/task"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	s := New(":0")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, req)
+const loopbackHost = "127.0.0.1:17017"
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+func TestMain(m *testing.M) {
+	gin.SetMode(gin.TestMode)
+	m.Run()
+}
+
+func TestShutdownEndpoint(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if isClosed(s.ShutdownRequested()) {
+		t.Fatal("shutdown requested before any request")
 	}
-	if w.Body.String() != "ok" {
-		t.Errorf("expected body %q, got %q", "ok", w.Body.String())
+
+	// A repeated request must not close the channel twice.
+	for i := 1; i <= 2; i++ {
+		if w := do(s, http.MethodPost, "/shutdown", ""); w.Code != http.StatusAccepted {
+			t.Fatalf("request %d: expected status %d, got %d", i, http.StatusAccepted, w.Code)
+		}
+	}
+
+	if !isClosed(s.ShutdownRequested()) {
+		t.Error("expected shutdown requested after a shutdown request")
+	}
+}
+
+func TestStatusEndpoint(t *testing.T) {
+	s := New(":0", "", StatusInfo{
+		Service:    "tf-unifiler",
+		Version:    "1.2.3",
+		WorkingDir: "/wd",
+		ConfigDir:  "/cfg",
+		Executable: "/bin/unifiler",
+		Portable:   true,
+	}, &fakeTasks{
+		statsFn: func() (int, int) { return 2, 5 },
+	})
+	w := do(s, http.MethodGet, "/status", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var got StatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding status response: %v", err)
+	}
+	if got.Service != "tf-unifiler" {
+		t.Errorf("expected service %q, got %q", "tf-unifiler", got.Service)
+	}
+	if got.Version != "1.2.3" || got.WorkingDir != "/wd" || got.ConfigDir != "/cfg" || got.Executable != "/bin/unifiler" || !got.Portable {
+		t.Errorf("status identity fields not echoed back: %+v", got)
+	}
+	if got.PendingTasks != 2 || got.TotalTasks != 5 {
+		t.Errorf("expected counts 2/5, got %d/%d", got.PendingTasks, got.TotalTasks)
+	}
+}
+
+func TestServerBoundsRequestReadTime(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if s.http.ReadTimeout <= 0 {
+		t.Errorf("expected a positive ReadTimeout so a slow body cannot hold a connection forever, got %v", s.http.ReadTimeout)
+	}
+}
+
+func TestServerBoundsResponseWriteTime(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	if s.http.WriteTimeout <= 0 {
+		t.Errorf("expected a positive WriteTimeout so a client that stops reading cannot hold a connection forever, got %v", s.http.WriteTimeout)
+	}
+	// The write deadline starts after the headers, so it must outlast the body read ReadTimeout allows.
+	if s.http.WriteTimeout <= s.http.ReadTimeout {
+		t.Errorf("expected WriteTimeout %v to exceed ReadTimeout %v", s.http.WriteTimeout, s.http.ReadTimeout)
 	}
 }
 
 func TestUnknownRoute(t *testing.T) {
-	s := New(":0")
-	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, req)
-
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	w := do(s, http.MethodGet, "/unknown", "")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
+}
+
+// fakeTasks is a controllable TaskService stub for handler tests.
+type fakeTasks struct {
+	enqueueFn func([]string) (task.Task, error)
+	getFn     func(string) (task.Task, bool)
+	listFn    func() []task.Task
+	cancelFn  func(string) error
+	restoreFn func(string) error
+	clearFn   func() int
+	statsFn   func() (int, int)
+}
+
+func (f *fakeTasks) Enqueue(args []string) (task.Task, error) { return f.enqueueFn(args) }
+func (f *fakeTasks) Get(id string) (task.Task, bool)          { return f.getFn(id) }
+func (f *fakeTasks) List() []task.Task                        { return f.listFn() }
+func (f *fakeTasks) Cancel(id string) error                   { return f.cancelFn(id) }
+func (f *fakeTasks) Restore(id string) error                  { return f.restoreFn(id) }
+func (f *fakeTasks) Clear() int                               { return f.clearFn() }
+func (f *fakeTasks) Stats() (int, int)                        { return f.statsFn() }
+
+func do(s *Server, method, path, body string) *httptest.ResponseRecorder {
+	var r *http.Request
+	if body == "" {
+		r = httptest.NewRequest(method, path, nil)
+	} else {
+		r = httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+	}
+	r.Host = loopbackHost
+	return serve(s, r)
+}
+
+// Report whether ch is closed, without blocking.
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Serve r on s and return the recorded response.
+func serve(s *Server, r *http.Request) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	return w
 }

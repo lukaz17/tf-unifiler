@@ -68,7 +68,7 @@ func (m *VideoModule) Info(file string) error {
 		OutputFile:   miFile,
 	}
 
-	_, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), false)
+	_, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 		InputFile:    inputFile.AbsolutePath,
 		OutputFormat: "JSON",
 	}
-	stdout, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), false)
+	stdout, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -232,7 +232,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 			ffmOptions.VideoFilter = vfHDR
 		}
 
-		_, err := exec.Run(m.cfg.Path.FFMpegPath, exec.NewFFmpegArgs(ffmOptions), false)
+		_, err := exec.Run(m.cfg.Path.FFMpegPath, exec.NewFFmpegArgs(ffmOptions), nil, nil)
 		if err != nil {
 			m.logger.Info().Msg("Failed to take video screenshot.")
 			return 0, err
@@ -246,8 +246,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 
 // Decorator to log error occurred when calling handlers.
 func (m *VideoModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for Video module.
@@ -256,13 +255,14 @@ func VideoCmd() *cobra.Command {
 		Use:   "video",
 		Short: "Batch processing video file.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringP("file", "i", "", "Input video file.")
 
 	infoCmd := &cobra.Command{
 		Use:   "info",
 		Short: "Analyze video file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "info")
@@ -278,7 +278,7 @@ func VideoCmd() *cobra.Command {
 		Use:   "extract-frames",
 		Short: "Extract multiple frames in video file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "screenshot")

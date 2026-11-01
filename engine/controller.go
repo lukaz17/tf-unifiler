@@ -16,6 +16,9 @@
 package engine
 
 import (
+	"io"
+	"os"
+
 	"github.com/rs/zerolog"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/crypto/hasher"
@@ -26,12 +29,15 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// Controller is the entrypoint for working with application configurations and
-// loggings.
+// Controller is the entrypoint for working with application configurations and loggings.
 type Controller struct {
 	Config   *config.RootConfig
 	Logger   zerolog.Logger
 	Notifier diag.Notifier
+	In       io.Reader
+	Out      io.Writer
+
+	Interactive bool
 
 	logFile *lumberjack.Logger
 }
@@ -40,15 +46,17 @@ type Controller struct {
 // useFS will instruct this function to read configurations and create log file.
 func NewController(useFS bool) *Controller {
 	cfg, err := config.InitKoanf(useFS)
-	logger, logFile, err2 := diag.NewLogger(cfg, useFS)
+	writer, logFile, err2 := diag.NewLogWriter(cfg, useFS)
+	logger := diag.NewLoggerFromWriter(writer)
 	if err != nil {
 		logger.Err(err).Msg("error initializing config")
 	}
 	if err2 != nil {
 		logger.Err(err2).Msg("error initializing log file")
 	}
+	interactive := tui.IsTTY()
 	var notifier diag.Notifier
-	if tui.IsTTY() {
+	if interactive {
 		notifier = tui.NewBubbleteaNotifier()
 		hasher.SetNotify(notifier)
 		filesys.SetNotify(notifier)
@@ -58,7 +66,12 @@ func NewController(useFS bool) *Controller {
 		Config:   cfg,
 		Logger:   logger,
 		Notifier: notifier,
-		logFile:  logFile,
+		In:       os.Stdin,
+		Out:      os.Stdout,
+
+		Interactive: interactive,
+
+		logFile: logFile,
 	}
 }
 
@@ -70,6 +83,12 @@ func (c *Controller) Close() {
 	}
 }
 
+// Redirect console log lines of this Controller to out; the rotating log file keeps receiving every line.
+// Loggers derived before the call keep writing to the previous console, so call it before deriving or sharing them.
+func (c *Controller) RedirectConsoleLogs(out io.Writer) {
+	c.Logger = diag.NewLoggerFromWriter(diag.NewLogWriterTo(out, c.Interactive, c.logFile))
+}
+
 // Get a ZeroLog logger instance for command handler from root instance.
 func (c *Controller) CommandLogger(module, command string) zerolog.Logger {
 	return c.Logger.With().Str("module", module).Str("command", command).Logger()
@@ -78,4 +97,24 @@ func (c *Controller) CommandLogger(module, command string) zerolog.Logger {
 // Get a ZeroLog logger instance for module from root instance.
 func (c *Controller) ModuleLogger(module string) zerolog.Logger {
 	return c.Logger.With().Str("module", module).Logger()
+}
+
+// Derive a task-scoped Controller for running a single task, it shares this Controller's rotating log file but tees log output into the per-task sink out for capture.
+func (c *Controller) fork(out io.Writer) *Controller {
+	sink := diag.ConsoleLevelWriter(out, false)
+	var writer zerolog.LevelWriter = sink
+	if c.logFile != nil {
+		writer = zerolog.MultiLevelWriter(diag.FileLevelWriter(c.logFile), sink)
+	}
+	return &Controller{
+		Config:   c.Config,
+		Logger:   diag.NewLoggerFromWriter(writer),
+		Notifier: c.Notifier,
+		In:       nil, // a task has no input, it must never read the server's terminal.
+		Out:      out,
+
+		Interactive: false,
+
+		logFile: nil,
+	}
 }

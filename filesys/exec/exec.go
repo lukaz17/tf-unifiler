@@ -17,7 +17,7 @@
 package exec
 
 import (
-	"os"
+	"io"
 	"os/exec"
 )
 
@@ -25,13 +25,14 @@ type CommandArgs interface {
 	Compile() []string
 }
 
-// Run an app and wait for it to finish. Passthrough will redirect the app stdin, stdout, and stderr to current process.
-func Run(app string, arg CommandArgs, passthrough bool) (string, error) {
+// Run an app and wait for it to finish, reading its stdin from in (nil means no input).
+// A non-nil out receives the app's stdout and stderr as they are written; otherwise its stdout is captured and returned.
+func Run(app string, arg CommandArgs, in io.Reader, out io.Writer) (string, error) {
 	cmd := exec.Command(app, arg.Compile()...)
-	if passthrough {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+	cmd.Stdin = in
+	if out != nil {
+		cmd.Stdout = out
+		cmd.Stderr = out
 		err := cmd.Run()
 		return "", err
 	}

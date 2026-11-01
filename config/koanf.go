@@ -67,7 +67,7 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 
 	cfg.ConfigDir = filepath.Dir(configFile)
 	cfg.ConfigFile = configFile
-	cfg.IsPortable = isPortable
+	cfg.Portable = isPortable
 	return cfg, nil
 }
 
@@ -77,6 +77,7 @@ func DefaultConfig() (*koanf.Koanf, error) {
 
 	err := k.Load(
 		structs.Provider(RootConfig{
+			Debug: false,
 			Logger: &LoggerConfig{
 				Level: "info",
 			},
@@ -90,9 +91,15 @@ func DefaultConfig() (*koanf.Koanf, error) {
 				X265Path:        "x265",
 			},
 			Server: &ServerConfig{
+				Name: "tf-unifiler",
 				HTTP: &HTTPConfig{
-					Port: 8080,
+					Hostname: "127.0.0.1",
+					Port:     17017,
 				},
+				Autostart:   true,
+				APIKey:      "",
+				Concurrency: 1,
+				Backlog:     256,
 			},
 		}, "koanf"),
 		nil,

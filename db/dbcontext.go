@@ -17,15 +17,12 @@ package db
 
 import (
 	"errors"
-	"log"
-	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/rs/zerolog"
 	"github.com/tforceaio/tf-unifiler/filesys"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 const SchemaVersion = 2
@@ -38,7 +35,7 @@ type DbContext struct {
 
 // Return new DbContext if the connection is successful.
 // Target database will be migrated to match database models.
-func Connect(uri string) (*DbContext, error) {
+func Connect(uri string, log zerolog.Logger) (*DbContext, error) {
 	parentDir := filepath.Dir(uri)
 	if !filesys.IsDirectoryExist(parentDir) {
 		err := filesys.CreateDirectoryRecursive(parentDir)
@@ -47,15 +44,7 @@ func Connect(uri string) (*DbContext, error) {
 		}
 	}
 	db, err := gorm.Open(sqlite.Open(uri), &gorm.Config{
-		Logger: logger.New(
-			log.New(os.Stdout, "\r\n", log.LstdFlags),
-			logger.Config{
-				SlowThreshold:             time.Second,
-				LogLevel:                  logger.Warn,
-				IgnoreRecordNotFoundError: true,
-				Colorful:                  false,
-			},
-		),
+		Logger: newZerologAdapter(log),
 	})
 	if err != nil {
 		return nil, err

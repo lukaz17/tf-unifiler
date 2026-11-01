@@ -41,6 +41,7 @@ type ProcessStatusMsg struct {
 	itemPercent   float64
 	totalInfinite bool
 	totalPercent  float64
+	totalLabel    string
 	errors        []string
 }
 
@@ -53,6 +54,7 @@ type ProcessStatus struct {
 	itemPercent   float64
 	totalPercent  float64
 	totalInfinite bool
+	totalLabel    string
 	errors        []string
 
 	itemProgress  progress.Model
@@ -105,9 +107,11 @@ func (m *ProcessStatus) Run(notifier *BubbleteaNotifier, onInterrupt func()) *Te
 	p := tea.NewProgram(m)
 	notifier.setProgram(p)
 
+	exited := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		_, err := p.Run()
+		close(exited)
 		if errors.Is(err, tea.ErrInterrupted) || errors.Is(err, tea.ErrProgramKilled) {
 			if onInterrupt != nil {
 				onInterrupt()
@@ -118,6 +122,7 @@ func (m *ProcessStatus) Run(notifier *BubbleteaNotifier, onInterrupt func()) *Te
 	return &TeaProgramHandle{
 		program:  p,
 		notifier: notifier,
+		exited:   exited,
 		done:     done,
 	}
 }
@@ -141,6 +146,7 @@ func (m ProcessStatus) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.itemPercent = msg.itemPercent
 		m.totalInfinite = msg.totalInfinite
 		m.totalPercent = msg.totalPercent
+		m.totalLabel = msg.totalLabel
 		m.errors = msg.errors
 
 	case progress.FrameMsg:
@@ -178,6 +184,8 @@ func (m ProcessStatus) View() tea.View {
 		} else {
 			sb.WriteString(fmt.Sprintf("%s%s\n", "Please wait", m.itemSpinner.View()))
 		}
+	} else if m.totalLabel != "" {
+		sb.WriteString(fmt.Sprintf("%s%s  %s\n", labelStyle.Render(""), m.totalProgress.ViewAs(m.totalPercent), m.totalLabel))
 	} else {
 		sb.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render(""), m.totalProgress.ViewAs(m.totalPercent)))
 	}

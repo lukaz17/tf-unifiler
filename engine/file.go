@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,17 +43,23 @@ type FileRenameMapping struct {
 
 // FileModule handles user requests related to batch processing files.
 type FileModule struct {
-	cfg      *config.RootConfig
-	notifier diag.Notifier
-	logger   zerolog.Logger
+	cfg         *config.RootConfig
+	interactive bool
+	notifier    diag.Notifier
+	logger      zerolog.Logger
+	in          io.Reader
+	out         io.Writer
 }
 
 // Return new FileModule.
 func NewFileModule(c *Controller, cmdName string) *FileModule {
 	return &FileModule{
-		cfg:      c.Config,
-		notifier: c.Notifier,
-		logger:   c.CommandLogger("file", cmdName),
+		cfg:         c.Config,
+		interactive: c.Interactive,
+		notifier:    c.Notifier,
+		logger:      c.CommandLogger("file", cmdName),
+		in:          c.In,
+		out:         c.Out,
 	}
 }
 
@@ -119,11 +126,11 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	for _, input := range inputs {
 		fmtInputs.WriteString(fmt.Sprintf("\n - %s", input))
 	}
-	fmt.Printf("\nInputs:%s\n", fmtInputs.String())
-	fmt.Printf("\nOutput:\n - %s\n", output)
+	fmt.Fprintf(m.out, "\nInputs:%s\n", fmtInputs.String())
+	fmt.Fprintf(m.out, "\nOutput:\n - %s\n", output)
 
-	if tui.IsTTY() {
-		fmt.Println("")
+	if m.interactive {
+		fmt.Fprintln(m.out, "")
 		opts, err := tui.RunCompressOptions(&tui.CompressOptionsValue{
 			ArchiveType:    format,
 			CompressLevel:  compressLevel,
@@ -168,7 +175,7 @@ func (m *FileModule) Pack(inputs []string, output string, format string, level s
 	if threads > 0 {
 		threadNum = nullable.FromInt(threads)
 	}
-	_, err = packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, false)
+	_, err = packFiles(inputs, output, format, compressLevel, solidMode, dictSize, password, threadNum, move, normalize, separate, m.cfg.Path, m.logger, m.notifier, m.in, m.out, false)
 	if err != nil {
 		return err
 	}
@@ -267,8 +274,7 @@ func (m *FileModule) renameByHash(inputs []string, algo string, prefix string) e
 
 // Decorator to log error occurred when calling handlers.
 func (m *FileModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Define Cobra Command for File module.
@@ -277,13 +283,14 @@ func FileCmd() *cobra.Command {
 		Use:   "file",
 		Short: "Batch processing file.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringArrayP("inputs", "i", []string{}, "Files/Directories to process.")
 
 	hashCmd := &cobra.Command{
 		Use:   "hash <input>...",
 		Short: "Compute and print hashes for files.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "hash")
@@ -296,7 +303,7 @@ func FileCmd() *cobra.Command {
 		Use:   "pack <input>...",
 		Short: "Pack files into an archive.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "pack")
@@ -309,7 +316,8 @@ func FileCmd() *cobra.Command {
 	packCmd.Flags().BoolP("move", "m", false, "Move files into archive after compression.")
 	packCmd.Flags().BoolP("normalize", "n", false, "Normalize file attributes before compression.")
 	packCmd.Flags().StringP("output", "o", "", "Output archive file path.")
-	packCmd.Flags().StringP("password", "p", "", "Password to protect the archive.")
+	packCmd.Flags().String("password", "", "Password to protect the archive.")
+	MarkFlagSensitive(packCmd, "password")
 	packCmd.Flags().BoolP("separate", "e", false, "Compress each input into a separate archive.")
 	packCmd.Flags().BoolP("solid", "s", false, "Enable solid mode for better compression ratio.")
 	packCmd.Flags().IntP("threads", "t", 0, "Number of threads to use for compression.")
@@ -319,7 +327,7 @@ func FileCmd() *cobra.Command {
 		Use:   "rename <input>...",
 		Short: "Multi-rename files and directories.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseFileFlags(cmd, args)
 			m := NewFileModule(c, "rename")

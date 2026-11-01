@@ -1,0 +1,308 @@
+// Copyright (C) 2025  T-Force I/O
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+package server
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/tforceaio/tf-unifiler/task"
+)
+
+func TestEnqueueAccepted(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		enqueueFn: func(args []string) (task.Task, error) {
+			return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
+		},
+	})
+	w := do(s, http.MethodPost, "/tasks", `{"args":["checksum","create"]}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusAccepted, w.Code, w.Body.String())
+	}
+}
+
+func TestEnqueueAcceptsJSONContentTypeVariants(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{"charset parameter is accepted", "application/json; charset=utf-8"},
+		{"media type is matched case-insensitively", "Application/JSON"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func(args []string) (task.Task, error) {
+					return task.Task{ID: "t1", Args: args, Status: task.StatusQueued}, nil
+				},
+			})
+			r := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(`{"args":["checksum","create"]}`))
+			r.Host = loopbackHost
+			r.Header.Set("Content-Type", tt.contentType)
+
+			w := serve(s, r)
+
+			if w.Code != http.StatusAccepted {
+				t.Errorf("expected %d, got %d (%s)", http.StatusAccepted, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestEnqueueEmptyArgsBadRequest(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrEmptyArgs },
+	})
+	w := do(s, http.MethodPost, "/tasks", `{"args":[]}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestEnqueueInvalidArgsBadRequest(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		enqueueFn: func([]string) (task.Task, error) {
+			return task.Task{}, fmt.Errorf("%w: %w", task.ErrInvalidArgs, errors.New("unknown flag: --bogus"))
+		},
+	})
+	w := do(s, http.MethodPost, "/tasks", `{"args":["file","hash","--bogus"]}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "unknown flag: --bogus") {
+		t.Errorf("expected the rejection reason in the body, got %s", w.Body.String())
+	}
+}
+
+func TestEnqueueQueueFull(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		enqueueFn: func([]string) (task.Task, error) { return task.Task{}, task.ErrQueueFull },
+	})
+	w := do(s, http.MethodPost, "/tasks", `{"args":["x"]}`)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected %d, got %d", http.StatusTooManyRequests, w.Code)
+	}
+}
+
+func TestEnqueueInvalidBody(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{})
+	w := do(s, http.MethodPost, "/tasks", `not json`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestEnqueueBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int
+		wantCode int
+	}{
+		{"body at the limit is accepted", maxEnqueueBodySize, http.StatusAccepted},
+		{"body past the limit is rejected", maxEnqueueBodySize + 1, http.StatusRequestEntityTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enqueued := false
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func([]string) (task.Task, error) {
+					enqueued = true
+					return task.Task{ID: "t1", Status: task.StatusQueued}, nil
+				},
+			})
+
+			w := do(s, http.MethodPost, "/tasks", enqueueBodyOfSize(t, tt.size))
+
+			if w.Code != tt.wantCode {
+				t.Errorf("expected %d, got %d (%s)", tt.wantCode, w.Code, w.Body.String())
+			}
+			if want := tt.wantCode == http.StatusAccepted; enqueued != want {
+				t.Errorf("expected enqueued %v, got %v", want, enqueued)
+			}
+		})
+	}
+}
+
+func TestEnqueueRejectsNonJSONContentType(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{"plain text a browser form can send is rejected", "text/plain"},
+		{"form encoding is rejected", "application/x-www-form-urlencoded"},
+		{"missing content type is rejected", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enqueued := false
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				enqueueFn: func([]string) (task.Task, error) {
+					enqueued = true
+					return task.Task{}, nil
+				},
+			})
+			r := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(`{"args":["checksum","create"]}`))
+			r.Host = loopbackHost
+			if tt.contentType != "" {
+				r.Header.Set("Content-Type", tt.contentType)
+			}
+
+			w := serve(s, r)
+
+			if w.Code != http.StatusUnsupportedMediaType {
+				t.Errorf("expected %d, got %d", http.StatusUnsupportedMediaType, w.Code)
+			}
+			if enqueued {
+				t.Error("a rejected request reached the queue")
+			}
+		})
+	}
+}
+
+func TestGetNotFound(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		getFn: func(string) (task.Task, bool) { return task.Task{}, false },
+	})
+	w := do(s, http.MethodGet, "/tasks/missing", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestGetFound(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		getFn: func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusRunning}, true },
+	})
+	w := do(s, http.MethodGet, "/tasks/t1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestList(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		listFn: func() []task.Task { return []task.Task{{ID: "a"}, {ID: "b"}} },
+	})
+	w := do(s, http.MethodGet, "/tasks", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestCancelNotFound(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		cancelFn: func(string) error { return task.ErrNotFound },
+	})
+	w := do(s, http.MethodPost, "/tasks/missing/cancel", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestCancelFound(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		cancelFn: func(string) error { return nil },
+		getFn:    func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusCanceled}, true },
+	})
+	w := do(s, http.MethodPost, "/tasks/t1/cancel", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestCancelFinishedConflict(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		cancelFn: func(string) error { return task.ErrFinished },
+	})
+	w := do(s, http.MethodPost, "/tasks/t1/cancel", "")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected %d, got %d", http.StatusConflict, w.Code)
+	}
+}
+
+func TestRestore(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"canceling task is restored", nil, http.StatusOK},
+		{"unknown task is not found", task.ErrNotFound, http.StatusNotFound},
+		{"finished task conflicts", task.ErrFinished, http.StatusConflict},
+		{"started task conflicts", task.ErrStarted, http.StatusConflict},
+		{"closed queue is unavailable", task.ErrClosed, http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				restoreFn: func(string) error { return tt.err },
+				getFn:     func(id string) (task.Task, bool) { return task.Task{ID: id, Status: task.StatusQueued}, true },
+			})
+			w := do(s, http.MethodPost, "/tasks/t1/restore", "")
+			if w.Code != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, w.Code)
+			}
+		})
+	}
+}
+
+func TestCancelAndRestoreTaskClearedMeanwhile(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"canceled task cleared before lookup is not found", "/tasks/t1/cancel"},
+		{"restored task cleared before lookup is not found", "/tasks/t1/restore"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(":0", "", StatusInfo{}, &fakeTasks{
+				cancelFn:  func(string) error { return nil },
+				restoreFn: func(string) error { return nil },
+				getFn:     func(string) (task.Task, bool) { return task.Task{}, false },
+			})
+			w := do(s, http.MethodPost, tt.path, "")
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("expected %d, got %d (%s)", http.StatusNotFound, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestClear(t *testing.T) {
+	s := New(":0", "", StatusInfo{}, &fakeTasks{
+		clearFn: func() int { return 3 },
+	})
+	w := do(s, http.MethodDelete, "/tasks", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Build a valid enqueue body of exactly size bytes by padding its only argument.
+func enqueueBodyOfSize(t *testing.T, size int) string {
+	t.Helper()
+	const prefix, suffix = `{"args":["`, `"]}`
+	pad := size - len(prefix) - len(suffix)
+	if pad < 0 {
+		t.Fatalf("size %d is below the %d-byte minimum body", size, len(prefix)+len(suffix))
+	}
+	return prefix + strings.Repeat("a", pad) + suffix
+}

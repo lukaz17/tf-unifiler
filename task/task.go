@@ -1,0 +1,173 @@
+// Copyright (C) 2025  T-Force I/O
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+package task
+
+import (
+	"context"
+	"io"
+	"sync"
+	"time"
+)
+
+// Status is the lifecycle state of a task.
+// A task canceled while queued is canceling, it keeps its place in the backlog and can be restored until a worker reaches it and marks it canceled.
+// A running task asked to stop is stopping until its runner returns.
+type Status string
+
+const (
+	StatusQueued    Status = "queued"
+	StatusCanceling Status = "canceling"
+	StatusRunning   Status = "running"
+	StatusStopping  Status = "stopping"
+	StatusSucceeded Status = "succeeded"
+	StatusFailed    Status = "failed"
+	StatusCanceled  Status = "canceled"
+)
+
+// Redactor returns a new copy of a task's argument vector with its secrets masked.
+type Redactor func(args []string) []string
+
+// Runner executes a task's argument vector, writing human-readable output to out.
+// It must honor ctx where it can, though cancellation of an already-running task is best-effort.
+type Runner func(ctx context.Context, args []string, out io.Writer) error
+
+// Validator returns an error describing why a task's argument vector cannot run, or nil when it can. It must not modify args.
+type Validator func(args []string) error
+
+// Task is an immutable snapshot of a task's state, safe to hand to callers; its Args are masked by the queue's Redactor.
+type Task struct {
+	ID         string     `json:"id"`
+	Args       []string   `json:"args"`
+	Status     Status     `json:"status"`
+	Err        string     `json:"error,omitempty"`
+	Output     string     `json:"output,omitempty"`
+	EnqueuedAt time.Time  `json:"enqueuedAt"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+}
+
+// entry is the live, mutable state of a task. Its fields are guarded by mu; the
+// live pointer never escapes the queue (callers only ever receive snapshots).
+type entry struct {
+	mu         sync.Mutex
+	id         string
+	args       []string
+	redacted   []string // args masked by the queue's Redactor, never mutated.
+	status     Status
+	err        string
+	out        *boundedBuffer
+	cancel     context.CancelFunc
+	enqueuedAt time.Time
+	startedAt  time.Time
+	finishedAt time.Time
+}
+
+// Return whether the entry is finished: it reached a final status (succeeded, failed, or canceled).
+func (e *entry) isFinished() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.isFinishedLocked()
+}
+
+// Report isFinished for a caller already holding e.mu.
+func (e *entry) isFinishedLocked() bool {
+	return e.status == StatusSucceeded || e.status == StatusFailed || e.status == StatusCanceled
+}
+
+// Ask the entry to stop: a queued task becomes canceling in place, a running one stopping with its context signaled.
+// A canceling or stopping entry is left as is; report false, changing nothing, when the entry already finished.
+func (e *entry) requestCancel() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	switch {
+	case e.status == StatusQueued:
+		e.status = StatusCanceling
+	case e.status == StatusRunning:
+		e.status = StatusStopping
+		if e.cancel != nil {
+			e.cancel()
+		}
+	case e.isFinishedLocked():
+		return false
+	}
+	return true
+}
+
+// Return an immutable copy of the entry's current state.
+func (e *entry) snapshot() Task {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	t := Task{
+		ID:         e.id,
+		Args:       append([]string(nil), e.redacted...),
+		Status:     e.status,
+		Err:        e.err,
+		Output:     e.out.String(),
+		EnqueuedAt: e.enqueuedAt,
+	}
+	if !e.startedAt.IsZero() {
+		started := e.startedAt
+		t.StartedAt = &started
+	}
+	if !e.finishedAt.IsZero() {
+		finished := e.finishedAt
+		t.FinishedAt = &finished
+	}
+	return t
+}
+
+// boundedBuffer is a concurrency-safe byte sink keeping the latest limit bytes written, so a task's final lines survive.
+// Older bytes past the cap are dropped (though reported as written so the logger never errors) and marked as truncated. A zero limit means unbounded.
+type boundedBuffer struct {
+	mu        sync.Mutex
+	buf       []byte
+	limit     int
+	truncated bool
+}
+
+// Return the buffered text, prepending a truncation marker when earlier bytes were dropped.
+func (b *boundedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.truncated {
+		return "... output truncated ...\n" + string(b.buf)
+	}
+	return string(b.buf)
+}
+
+// Implement io.Writer: append p, drop the oldest bytes past the limit marking the buffer truncated, and report all of p as written.
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	n := len(p)
+	if b.limit <= 0 {
+		b.buf = append(b.buf, p...)
+		return n, nil
+	}
+	// Trim an oversized p first so it is never copied whole.
+	if len(p) > b.limit {
+		p = p[len(p)-b.limit:]
+		b.truncated = true
+	}
+	b.buf = append(b.buf, p...)
+	if over := len(b.buf) - b.limit; over > 0 {
+		b.buf = b.buf[over:]
+		b.truncated = true
+	}
+	return n, nil
+}

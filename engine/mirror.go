@@ -198,8 +198,7 @@ func (m *MirrorModule) Scan(workspaceDir string, inputs []string) error {
 
 // Decorator to log error occurred when calling handlers.
 func (m *MirrorModule) logError(err error) error {
-	logProgramError(m.logger, err)
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Return directory path to store Mirror module's outputs inside Unifiler workspace.
@@ -213,13 +212,14 @@ func MirrorCmd() *cobra.Command {
 		Use:   "mirror",
 		Short: "Centralized file repository.",
 	}
+	MarkCommandQueueable(rootCmd)
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Directory contains Unifiler workspace.")
 
 	exportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Create file structure defined by checksum file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, []string{})
 			m := NewMirrorModule(c, "export")
@@ -234,7 +234,7 @@ func MirrorCmd() *cobra.Command {
 		Use:   "scan",
 		Short: "Scan inputs and import them to mirror repository.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, args)
 			m := NewMirrorModule(c, "export")

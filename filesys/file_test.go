@@ -30,7 +30,9 @@ func TestList(t *testing.T) {
 		results []string
 	}{
 		{"files only", []string{"file.go"}, []string{"file.go"}},
-		{"directories only", []string{"../build"}, []string{filepath.FromSlash("../build"), filepath.FromSlash("../build/ci.go"), filepath.FromSlash("../build/env.go"), filepath.FromSlash("../build/git.go"), filepath.FromSlash("../build/go.go"), filepath.FromSlash("../build/os.go")}},
+		{"directories only", []string{"../.tests/module/http"}, []string{
+			filepath.FromSlash("../.tests/module/http"), filepath.FromSlash("../.tests/module/http/1-get.md"), filepath.FromSlash("../.tests/module/http/2-post.md"), filepath.FromSlash("../.tests/module/http/3-put.md"), filepath.FromSlash("../.tests/module/http/4-delete.md"),
+		}},
 		{"file and directories", []string{"../.tests/module", "../.tests/readme.md"}, []string{
 			filepath.FromSlash("../.tests/module"), filepath.FromSlash("../.tests/module/fmt"), filepath.FromSlash("../.tests/module/fmt/1-printf.md"), filepath.FromSlash("../.tests/module/fmt/2-errorf.md"),
 			filepath.FromSlash("../.tests/module/http"), filepath.FromSlash("../.tests/module/http/1-get.md"), filepath.FromSlash("../.tests/module/http/2-post.md"), filepath.FromSlash("../.tests/module/http/3-put.md"), filepath.FromSlash("../.tests/module/http/4-delete.md"),

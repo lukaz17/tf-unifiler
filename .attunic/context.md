@@ -40,6 +40,7 @@ List of important folders, files and their roles in the project:
 ├── .github/            # GitHub configuration as code
 │   └── workflows/      # GitHub Actions release workflow
 ├── .vscode/            # Visual Studio Code configuration as code
+├── app/                # wiring root of the program: cobra root, rpc server, rpc dispatch
 ├── build/              # build driver (`ci.go` behind the go toolchain init)
 ├── config/             # global configuration from file, environment variables
 ├── core/               # project-level std lib
@@ -56,17 +57,20 @@ List of important folders, files and their roles in the project:
 ├── internal/           # non-importable internals
 │   └── nullable/       # forked nullable types (bool, int), from github.com/tee8z/nullable
 ├── server/             # lightweight HTTP server for serving RPC
+├── task/               # in-memory task queue for the RPC
 ├── tui/                # terminal UI components based on Bubbletea v2
 ├── xlib/               # small shared utility helpers
 ├── .copier-answers.yml # project Copier answers
 ├── .editorconfig       # EditorConfig configuration
 ├── .gitignore          # git ignore patterns
+├── AGENTS.md           # project AI agent entry point
+├── CLAUDE.md           # project Claude Code entry point
 ├── COPYING             # GPL-3.0 license text
 ├── COPYING.LESSER      # LGPL-3.0 license text
 ├── README.md           # project overview
 ├── go.mod              # Go module definition
 ├── go.sum              # Go module checksums
-└── main.go             # main program entrypoint
+└── main.go             # program entry point
 ```
 
 ## Layer Dependencies
@@ -125,6 +129,7 @@ Facts about the project which have been confirmed. They may look wrong or contra
 | Fact | Reason |
 |------|--------|
 <!-- Project-specific / Confirmed Facts -->
+| No CLI subcommand defines its own `PersistentPreRun`/`PersistentPreRunE`; the root command's is the only one. | Cobra runs only the nearest `PersistentPreRunE` in a command's ancestry, so one on a subcommand breaks `engine.DryRun` ([common_dryrun.go](../engine/common_dryrun.go)) and the features that depend on it (`--queue` forwarding and RPC enqueue validation). |
 
 ## Project-specific
 

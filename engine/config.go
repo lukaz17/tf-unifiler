@@ -16,10 +16,13 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -27,6 +30,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
+	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/config"
 )
 
@@ -34,6 +38,7 @@ import (
 type ConfigModule struct {
 	cfg    *config.RootConfig
 	logger zerolog.Logger
+	out    io.Writer
 }
 
 // Return new ConfigModule instance.
@@ -41,6 +46,7 @@ func NewConfigModule(c *Controller) *ConfigModule {
 	return &ConfigModule{
 		cfg:    c.Config,
 		logger: c.ModuleLogger("config"),
+		out:    c.Out,
 	}
 }
 
@@ -71,7 +77,7 @@ func (m *ConfigModule) Export(outputPath string, diffOnly bool) error {
 		return err
 	}
 	if outputPath == "" {
-		fmt.Print(string(data))
+		fmt.Fprint(m.out, string(data))
 	} else {
 		err := m.writeFile(outputPath, data)
 		if err != nil {
@@ -96,7 +102,7 @@ func (m *ConfigModule) Get(key string) error {
 	}
 
 	if val := k.Get(key); val != nil {
-		fmt.Printf("%v\n", val)
+		fmt.Fprintf(m.out, "%v\n", val)
 	}
 	return nil
 }
@@ -130,17 +136,16 @@ func (m *ConfigModule) Set(key, value string) error {
 		return err
 	}
 
-	m.logger.Info().Str("key", key).Str("value", value).
+	// The YAML keys are matched case-insensitively when the file is loaded.
+	logged := opx.Ternary(strings.EqualFold(key, config.KeyServerAPIKey), redactedValue, value)
+	m.logger.Info().Str("key", key).Str("value", logged).
 		Msg("Configuration updated successfully.")
 	return nil
 }
 
 // Decorator to log error occurred when calling handlers.
 func (m *ConfigModule) logError(err error) error {
-	if err != nil {
-		m.logger.Err(err).Msg("Unexpected error has occurred.")
-	}
-	return err
+	return LogCommandError(m.logger, err)
 }
 
 // Write data to a file safely.
@@ -152,7 +157,11 @@ func (m *ConfigModule) writeFile(path string, data []byte) error {
 		}
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// Configuration may hold the server's API key, so only the owner may read it.
+	if err := os.Chmod(path, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to restrict permissions of file %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 
@@ -170,7 +179,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Export active configuration to stdout or file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp()
+			c := InitAppWithBanner(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -184,7 +193,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "get [key]",
 		Short: "Get the active value of a configuration key.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := NewController(true)
+			c := InitApp(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -197,7 +206,7 @@ func ConfigCmd() *cobra.Command {
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value in the active YAML file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := NewController(true)
+			c := InitApp(cmd.Context())
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
