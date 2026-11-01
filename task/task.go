@@ -130,8 +130,8 @@ func (e *entry) snapshot() Task {
 	return t
 }
 
-// boundedBuffer is a concurrency-safe byte sink capped at limit bytes.
-// Writes past the cap are dropped (but reported as written so the logger never errors) and marked as truncated. A zero limit means unbounded.
+// boundedBuffer is a concurrency-safe byte sink keeping the latest limit bytes written, so a task's final lines survive.
+// Older bytes past the cap are dropped (though reported as written so the logger never errors) and marked as truncated. A zero limit means unbounded.
 type boundedBuffer struct {
 	mu        sync.Mutex
 	buf       []byte
@@ -139,35 +139,35 @@ type boundedBuffer struct {
 	truncated bool
 }
 
-// Return the buffered text, appending a truncation marker when writes were dropped.
+// Return the buffered text, prepending a truncation marker when earlier bytes were dropped.
 func (b *boundedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.truncated {
-		return string(b.buf) + "\n... output truncated ...\n"
+		return "... output truncated ...\n" + string(b.buf)
 	}
 	return string(b.buf)
 }
 
-// Implement io.Writer: retain p up to the limit, mark the rest truncated, and report all of p as written.
+// Implement io.Writer: append p, drop the oldest bytes past the limit marking the buffer truncated, and report all of p as written.
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	n := len(p)
 	if b.limit <= 0 {
 		b.buf = append(b.buf, p...)
-		return len(p), nil
+		return n, nil
 	}
-	avail := b.limit - len(b.buf)
-	if avail <= 0 {
+	// Trim an oversized p first so it is never copied whole.
+	if len(p) > b.limit {
+		p = p[len(p)-b.limit:]
 		b.truncated = true
-		return len(p), nil
 	}
-	if len(p) > avail {
-		b.buf = append(b.buf, p[:avail]...)
+	b.buf = append(b.buf, p...)
+	if over := len(b.buf) - b.limit; over > 0 {
+		b.buf = b.buf[over:]
 		b.truncated = true
-	} else {
-		b.buf = append(b.buf, p...)
 	}
-	return len(p), nil
+	return n, nil
 }
