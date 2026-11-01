@@ -89,6 +89,101 @@ Supported algorithms: `crc32`, `crc32c`, `md4`, `md5`, `ripemd160`, `sha1` (defa
 - `extract-frames` saves JPEG frames taken across the whole video, converting HDR to SDR colors.
 - `info` saves its media information to `<file>.mediainfo.json` next to it.
 
+## Server Mode
+
+Server mode runs TFunifiler as a background server that works through a queue of commands. Add `--queue` to a command to send it to the server instead of running it in your terminal: you get your prompt back right away, and the server runs the queued commands one after another.
+
+Only the `checksum`, `file`, `metadata`, `mirror` and `video` commands can be queued with `--queue`.
+
+### Quick Start
+
+```sh
+# Terminal 1: start the server and leave it running (optional, see Auto-start).
+unifiler server
+
+# Terminal 2: queue commands, with absolute paths (see Things to Know).
+unifiler checksum create /data/photos -o /data/checksums --queue
+unifiler file hash /data/archive.7z --queue
+```
+
+Each queued command prints `Enqueued task <id> (queued)` and returns without showing progress: the server's terminal shows the current item and how many tasks have finished, and the [HTTP API](#http-api) gives each task's status and output. Stop the server with `unifiler server stop`, or with Ctrl+C in its terminal.
+
+### Commands
+
+`server` manages the server:
+
+- `start` starts the server in this terminal; `unifiler server` alone does the same.
+- `stop` asks the running server to stop, and waits until it has.
+- `generate-api-key` creates a random API key and saves it to the config file; `--force` replaces a key already set.
+
+### Auto-start
+
+When you queue a command and no server is running, TFunifiler starts one in the background and waits up to 15 seconds for it to answer. It starts in the folder of that command, with its environment, and every later queued command runs there too (see [Things to Know](#things-to-know)). The auto-started server has no window: it writes to the log file (see [Configuration](#configuration)) and keeps running until you run `unifiler server stop`.
+
+Auto-start only starts a server on this machine. Turn it off by setting `server.autostart` to `false`.
+
+### Things to Know
+
+- **Queued commands run in the server's context.** Write them as you would in the server's terminal, with its folder, settings and environment. Your terminal only checks their syntax; other errors show up as `failed` tasks.
+- **Client and server must be the same build.** Restart the server after updating TFunifiler.
+- **One server per config folder.**
+- **Tasks live in memory.** They are lost when the server stops, and while it runs it keeps only the latest `server.backlog` finished tasks and the last 64 KiB of each task's output.
+- **Stop the server when idle**, with `pendingTasks` at `0` in `GET /status`. Queued tasks are canceled, and running tasks are cut off after 17 seconds, which can leave their work half done.
+- **Canceling only skips queued tasks.** A running task runs to the end.
+
+### Server Settings
+
+Server mode adds these settings to the ones in [Configuration](#configuration), and they are changed the same way. Restart the server after a change.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `server.http.hostname` | `127.0.0.1` | Address the server listens on, and that `--queue` connects to. |
+| `server.http.port` | `17017` | Port the server listens on, and that `--queue` connects to. |
+| `server.apikey` | empty | API key the server requires; see [Security](#security). |
+| `server.autostart` | `true` | Start a server when a command is queued and none is running. |
+| `server.concurrency` | `1` | Number of tasks run at the same time. |
+| `server.backlog` | `256` | Number of tasks that can wait to run; more are rejected with `task queue is full`. Also the number of finished tasks kept. |
+
+### Security
+
+Queued commands run with the permissions of the user who started the server, and can read, change and delete that user's files.
+
+- **No API key (default):** the server listens only on this machine (`127.0.0.1`) and rejects requests from web pages, but any user or program on this machine can send it commands. On a shared machine, set an API key.
+- **API key:** run `unifiler server generate-api-key`, then restart the server. The key is saved to the config file (on Linux and macOS, readable only by you), where `--queue` and `server stop` on the same machine read it. HTTP clients send it as `Authorization: Bearer <key>`.
+- **Listening on the network** (for example `server.http.hostname` set to `0.0.0.0`) requires an API key: the server refuses to start without one. Traffic is plain HTTP, so the key, the commands, including values such as `file pack --password`, and their output cross the network unencrypted. Do this only on a trusted network, or reach the server through an SSH tunnel.
+- **Remote clients:** set `server.http.hostname` and `server.apikey` on the client machine to the server's address and key. Paths in queued commands are paths on the server machine, and auto-start does not apply.
+
+### HTTP API
+
+The CLI only queues commands; use the HTTP API to see their results and manage them. Add the `Authorization: Bearer <key>` header when an API key is set.
+
+| Request | Purpose |
+|---------|---------|
+| `GET /status` | Server version, working directory, config folder and task counts. |
+| `GET /tasks` | All tasks, oldest first. |
+| `GET /tasks/{id}` | One task, with its output and error. |
+| `POST /tasks` | Queue a command; JSON body such as `{"args": ["checksum", "create", "/data/photos", "-o", "/data/checksums"]}`, sent with `Content-Type: application/json`. |
+| `POST /tasks/{id}/cancel` | Cancel a task. |
+| `POST /tasks/{id}/restore` | Put a task canceled while queued back in the queue, in its old place. |
+| `DELETE /tasks` | Remove all finished tasks. |
+| `POST /shutdown` | Stop the server. |
+
+For example, to see a task (use `curl.exe` in Windows PowerShell):
+
+```sh
+curl http://127.0.0.1:17017/tasks/<id>
+```
+
+| Task status | Meaning |
+|-------------|---------|
+| `queued` | Waiting to run. |
+| `canceling` | Canceled while queued; skipped when its turn comes, unless restored first. |
+| `running` | Running. |
+| `stopping` | Cancel requested while running; it still runs to the end, then becomes `succeeded` or `failed`. |
+| `succeeded` | Finished without error. |
+| `failed` | Finished with an error, given in `error`. |
+| `canceled` | Canceled while queued; it never ran. |
+
 ## License
 
 TFunifiler is licensed under GPL-3.0 license. See [COPYING](COPYING) file for details. TFunifiler is developed using the following libraries and frameworks:
