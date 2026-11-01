@@ -45,7 +45,7 @@ const (
 	taskStatsInterval     = 250 * time.Millisecond                // how often the terminal view refreshes its task counts.
 )
 
-// ServerModule runs the RPC server and the task queue that backs it, or stops a running one.
+// ServerModule runs the RPC server and the task queue that backs it.
 type ServerModule struct {
 	ctrl    *engine.Controller
 	cfg     *config.RootConfig
@@ -61,6 +61,22 @@ func NewServerModule(c *engine.Controller, cmdName string) *ServerModule {
 		cfg:    c.Config,
 		logger: c.CommandLogger("server", cmdName),
 	}
+}
+
+// Generate a random API key and save it to the configuration file without printing it; a configured key is replaced only when force is set.
+func (m *ServerModule) GenerateAPIKey(force bool) error {
+	if m.cfg.Server.APIKey != "" && !force {
+		return errors.New("an API key is already configured; pass --force to replace it")
+	}
+	key, err := server.GenerateAPIKey()
+	if err != nil {
+		return err
+	}
+	if err := engine.NewConfigModule(m.ctrl).Set(config.KeyServerAPIKey, key); err != nil {
+		return err
+	}
+	m.logger.Info().Str("configFile", m.cfg.ConfigFile).Msg("API key generated. Restart the running server, if any, to apply it.")
+	return nil
 }
 
 // Start the task queue and listen for RPC requests. Blocks until the server fails, or an interrupt/terminate signal or an RPC stop request triggers a graceful shutdown.
@@ -219,6 +235,21 @@ func ServerCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  start,
 	}
+
+	generateAPIKeyCmd := &cobra.Command{
+		Use:   "generate-api-key",
+		Short: "Generate a random API key and save it to the configuration file.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := engine.InitApp(context.TODO())
+			defer c.Close()
+			m := NewServerModule(c, "generate-api-key")
+			force, _ := cmd.Flags().GetBool("force")
+			return m.logError(m.GenerateAPIKey(force))
+		},
+	}
+	generateAPIKeyCmd.Flags().Bool("force", false, "Replace the API key already configured.")
+	rootCmd.AddCommand(generateAPIKeyCmd)
 
 	startCmd := &cobra.Command{
 		Use:   "start",

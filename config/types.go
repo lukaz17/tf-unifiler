@@ -15,6 +15,9 @@
 
 package config
 
+// KeyServerAPIKey is the dot-delimited key of ServerConfig.APIKey, as the YAML file and the config commands name it.
+const KeyServerAPIKey = "server.apikey"
+
 // RootConfig contains all available configurations for the application.
 type RootConfig struct {
 	ConfigDir  string        `koanf:"-"`

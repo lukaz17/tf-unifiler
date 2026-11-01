@@ -16,11 +16,13 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -28,6 +30,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
+	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/config"
 )
 
@@ -133,7 +136,9 @@ func (m *ConfigModule) Set(key, value string) error {
 		return err
 	}
 
-	m.logger.Info().Str("key", key).Str("value", value).
+	// The YAML keys are matched case-insensitively when the file is loaded.
+	logged := opx.Ternary(strings.EqualFold(key, config.KeyServerAPIKey), redactedValue, value)
+	m.logger.Info().Str("key", key).Str("value", logged).
 		Msg("Configuration updated successfully.")
 	return nil
 }
@@ -152,7 +157,11 @@ func (m *ConfigModule) writeFile(path string, data []byte) error {
 		}
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// Configuration may hold the server's API key, so only the owner may read it.
+	if err := os.Chmod(path, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to restrict permissions of file %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 

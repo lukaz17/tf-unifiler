@@ -18,11 +18,53 @@ package engine
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/tforceaio/tf-unifiler/config"
 )
+
+func TestConfigSetMasksAPIKeyInLog(t *testing.T) {
+	const key = "sk-unifiler-sentinel"
+	path := filepath.Join(t.TempDir(), "unifiler.yaml")
+	base := &Controller{Config: &config.RootConfig{ConfigFile: path}}
+
+	var out bytes.Buffer
+	if err := RunTask(base, []string{"config", "set", config.KeyServerAPIKey, key}, context.Background(), &out); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+	if strings.Contains(out.String(), key) || !strings.Contains(out.String(), redactedValue) {
+		t.Errorf("expected the logged value masked as %q; got:\n%s", redactedValue, out.String())
+	}
+	if data, err := os.ReadFile(path); err != nil || !strings.Contains(string(data), key) {
+		t.Errorf("expected the key saved to %s, got %q (%v)", path, data, err)
+	}
+}
+
+func TestConfigSetRestrictsFileToOwner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ignores Unix permission bits except the owner write bit")
+	}
+	path := filepath.Join(t.TempDir(), "unifiler.yaml")
+	if err := os.WriteFile(path, []byte("debug: false\n"), 0644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+	base := &Controller{Config: &config.RootConfig{ConfigFile: path}}
+
+	if err := RunTask(base, []string{"config", "set", config.KeyServerAPIKey, "sk-unifiler-sentinel"}, context.Background(), &bytes.Buffer{}); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("expected mode 0600, got %#o", got)
+	}
+}
 
 func TestConfigWritesToTaskOutput(t *testing.T) {
 	base := &Controller{Config: &config.RootConfig{Server: &config.ServerConfig{Name: "unifiler-output-sentinel"}}}

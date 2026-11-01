@@ -20,7 +20,31 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
+
+func TestGenerateAPIKey(t *testing.T) {
+	key, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	id, ok := strings.CutPrefix(key, APIKeyPrefix)
+	if !ok {
+		t.Fatalf("expected key to start with %q, got %q", APIKeyPrefix, key)
+	}
+	if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
+		t.Errorf("expected a canonical UUID after the prefix, got %q (%v)", id, err)
+	}
+
+	other, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	if other == key {
+		t.Errorf("two generated keys are equal: %q", key)
+	}
+}
 
 func TestAPIKeyGuard(t *testing.T) {
 	tests := []struct {

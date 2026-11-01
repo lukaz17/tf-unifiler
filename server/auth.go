@@ -19,15 +19,29 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+// APIKeyPrefix starts every key made by GenerateAPIKey, so a TFunifiler key is recognizable wherever it is pasted.
+const APIKeyPrefix = "sk-unifiler-"
 
 // ErrUnauthorized reports a request without a valid API key.
 var ErrUnauthorized = errors.New("missing or invalid API key")
+
+// Return a new API key: APIKeyPrefix followed by a random (version 4) UUID drawn from crypto/rand.
+func GenerateAPIKey() (string, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return "", fmt.Errorf("generating API key: %w", err)
+	}
+	return APIKeyPrefix + id.String(), nil
+}
 
 // Return a middleware that rejects every state-changing request a browser sends from another origin, so a web page cannot drive the server.
 func rejectCrossOrigin() gin.HandlerFunc {

@@ -19,9 +19,18 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
+	"github.com/rs/zerolog"
+	"github.com/tforceaio/tf-unifiler/config"
+	"github.com/tforceaio/tf-unifiler/engine"
 	"github.com/tforceaio/tf-unifiler/server"
 	"github.com/tforceaio/tf-unifiler/task"
 )
@@ -132,6 +141,69 @@ func TestStopServerTimesOut(t *testing.T) {
 	if err := stopServer(context.Background(), server.NewClient(ts.URL, ""), "tf-unifiler", false, 50*time.Millisecond, stopTestInterval); err == nil {
 		t.Fatal("expected timeout error when the server never stops, got nil")
 	}
+}
+
+func TestGenerateAPIKeySavesKey(t *testing.T) {
+	m, path := newKeyModule(t, "")
+
+	if err := m.GenerateAPIKey(false); err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	if got := savedAPIKey(t, path); !strings.HasPrefix(got, server.APIKeyPrefix) {
+		t.Errorf("expected a saved key starting with %q, got %q", server.APIKeyPrefix, got)
+	}
+}
+
+func TestGenerateAPIKeyGuardsConfiguredKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		force   bool
+		wantErr bool
+	}{
+		{"configured key is kept without force", false, true},
+		{"configured key is replaced with force", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, path := newKeyModule(t, "s3cret")
+
+			err := m.GenerateAPIKey(tt.force)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("GenerateAPIKey(force: %t): expected error %t, got %v", tt.force, tt.wantErr, err)
+			}
+			saved := savedAPIKey(t, path)
+			if tt.wantErr && saved != "" {
+				t.Errorf("expected no key saved after a refusal, got %q", saved)
+			}
+			if !tt.wantErr && !strings.HasPrefix(saved, server.APIKeyPrefix) {
+				t.Errorf("expected a saved key starting with %q, got %q", server.APIKeyPrefix, saved)
+			}
+		})
+	}
+}
+
+// Return a ServerModule whose configuration holds apiKey and is saved to a file in a temp dir, along with that file's path.
+func newKeyModule(t *testing.T, apiKey string) (*ServerModule, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "unifiler.yaml")
+	c := &engine.Controller{
+		Config: &config.RootConfig{ConfigFile: path, Server: &config.ServerConfig{APIKey: apiKey}},
+		Logger: zerolog.Nop(),
+	}
+	return NewServerModule(c, "generate-api-key"), path
+}
+
+// Return the API key saved in the YAML file at path, or an empty string when the file does not exist.
+func savedAPIKey(t *testing.T, path string) string {
+	t.Helper()
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	k := koanf.New(".")
+	if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
+		t.Fatalf("loading %s: %v", path, err)
+	}
+	return k.String(config.KeyServerAPIKey)
 }
 
 // idleTasks is a server.TaskService holding no tasks.
