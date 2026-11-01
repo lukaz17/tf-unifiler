@@ -17,6 +17,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,6 +30,7 @@ func TestLockAcquireWritesOwnPID(t *testing.T) {
 	if err := lock.Acquire(); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
+	t.Cleanup(func() { _ = lock.Release() })
 
 	pid, alive := lock.Owner()
 	if pid != os.Getpid() {
@@ -44,8 +46,28 @@ func TestLockAcquireWritesOwnPID(t *testing.T) {
 
 func TestLockAcquireRefusesLiveOwner(t *testing.T) {
 	dir := t.TempDir()
-	if err := NewLock(dir).Acquire(); err != nil {
+	owner := NewLock(dir)
+	if err := owner.Acquire(); err != nil {
 		t.Fatalf("first Acquire: %v", err)
+	}
+	t.Cleanup(func() { _ = owner.Release() })
+
+	err := NewLock(dir).Acquire()
+	if !errors.Is(err, ErrLockHeld) {
+		t.Fatalf("expected ErrLockHeld, got %v", err)
+	}
+}
+
+func TestLockAcquireRefusesOwnerBeforePIDWritten(t *testing.T) {
+	dir := t.TempDir()
+	owner := NewLock(dir)
+	if err := owner.Acquire(); err != nil {
+		t.Fatalf("first Acquire: %v", err)
+	}
+	t.Cleanup(func() { _ = owner.Release() })
+	// The owner holds the lock but has not written its pid yet.
+	if err := os.Truncate(filepath.Join(dir, lockFileName), 0); err != nil {
+		t.Fatalf("emptying lock file: %v", err)
 	}
 
 	err := NewLock(dir).Acquire()
@@ -54,9 +76,38 @@ func TestLockAcquireRefusesLiveOwner(t *testing.T) {
 	}
 }
 
+func TestLockAcquireReclaimsPIDOfProcessWithoutLock(t *testing.T) {
+	dir := t.TempDir()
+	// A crashed owner's pid reused by a live process holding no lock: this test process.
+	if err := os.WriteFile(filepath.Join(dir, lockFileName), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o600); err != nil {
+		t.Fatalf("seeding stale lock: %v", err)
+	}
+	lock := NewLock(dir)
+
+	err := lock.Acquire()
+	t.Cleanup(func() { _ = lock.Release() })
+
+	if err != nil {
+		t.Fatalf("Acquire over a reused pid: %v", err)
+	}
+}
+
+func TestLockOwnerIgnoresPIDOfProcessWithoutLock(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, lockFileName), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o600); err != nil {
+		t.Fatalf("seeding stale lock: %v", err)
+	}
+
+	pid, alive := NewLock(dir).Owner()
+
+	if pid != 0 || alive {
+		t.Errorf("expected no owner, got pid %d alive=%v", pid, alive)
+	}
+}
+
 func TestLockAcquireReclaimsStaleLock(t *testing.T) {
 	dir := t.TempDir()
-	// A non-numeric pidfile cannot name a live process, so it is reclaimable on any OS.
+	// A lock file no process holds is reclaimable whatever it contains.
 	if err := os.WriteFile(filepath.Join(dir, lockFileName), []byte("not-a-pid\n"), 0o600); err != nil {
 		t.Fatalf("seeding stale lock: %v", err)
 	}
@@ -65,6 +116,7 @@ func TestLockAcquireReclaimsStaleLock(t *testing.T) {
 	if err := lock.Acquire(); err != nil {
 		t.Fatalf("Acquire over stale lock: %v", err)
 	}
+	t.Cleanup(func() { _ = lock.Release() })
 	if pid, alive := lock.Owner(); pid != os.Getpid() || !alive {
 		t.Errorf("expected reclaimed owner pid %d alive, got %d alive=%v", os.Getpid(), pid, alive)
 	}
@@ -83,9 +135,11 @@ func TestLockReleaseAllowsReacquire(t *testing.T) {
 	if _, alive := lock.Owner(); alive {
 		t.Error("expected no live owner after Release")
 	}
-	if err := NewLock(dir).Acquire(); err != nil {
+	next := NewLock(dir)
+	if err := next.Acquire(); err != nil {
 		t.Errorf("expected reacquire after Release, got %v", err)
 	}
+	t.Cleanup(func() { _ = next.Release() })
 }
 
 func TestLockReleaseMissingIsNoError(t *testing.T) {
@@ -94,8 +148,23 @@ func TestLockReleaseMissingIsNoError(t *testing.T) {
 	}
 }
 
-func TestProcessAliveCurrentProcess(t *testing.T) {
-	if !processAlive(os.Getpid()) {
-		t.Error("current process should be reported alive")
+func TestLockReleaseByLoserKeepsWinnerLock(t *testing.T) {
+	dir := t.TempDir()
+	winner := NewLock(dir)
+	if err := winner.Acquire(); err != nil {
+		t.Fatalf("winner Acquire: %v", err)
+	}
+	t.Cleanup(func() { _ = winner.Release() })
+	loser := NewLock(dir)
+	if err := loser.Acquire(); !errors.Is(err, ErrLockHeld) {
+		t.Fatalf("expected loser to get ErrLockHeld, got %v", err)
+	}
+
+	if err := loser.Release(); err != nil {
+		t.Fatalf("loser Release: %v", err)
+	}
+
+	if pid, alive := winner.Owner(); pid != os.Getpid() || !alive {
+		t.Errorf("expected winner pid %d to still own the lock, got %d alive=%v", os.Getpid(), pid, alive)
 	}
 }

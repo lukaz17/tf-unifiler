@@ -17,22 +17,32 @@
 
 package server
 
-import "golang.org/x/sys/windows"
+import (
+	"errors"
+	"os"
 
-// stillActiveExitCode is the Win32 STILL_ACTIVE value GetExitCodeProcess reports for a running process.
-const stillActiveExitCode = 259
+	"golang.org/x/sys/windows"
+)
 
-// Report whether a process with the given pid exists and has not exited.
-// OpenProcess failing is treated as not alive.
-func processAlive(pid int) bool {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return false
+// lockOffset is where the one-byte locked region starts, far past the pid text: Windows locks are mandatory, so locking the pid would stop Owner from reading it.
+const lockOffset = 1 << 30
+
+// Try to take an exclusive lock on f without blocking, and report false when another handle holds it.
+// Windows locks belong to a handle, not a process, so a second handle in this same process contends too.
+func tryLock(f *os.File) (bool, error) {
+	region := windows.Overlapped{Offset: lockOffset}
+	err := windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &region)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, windows.ERROR_LOCK_VIOLATION):
+		return false, nil
 	}
-	defer windows.CloseHandle(h)
-	var code uint32
-	if err := windows.GetExitCodeProcess(h, &code); err != nil {
-		return false
-	}
-	return code == stillActiveExitCode
+	return false, err
+}
+
+// Free the lock taken on f by tryLock.
+func unlock(f *os.File) error {
+	region := windows.Overlapped{Offset: lockOffset}
+	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &region)
 }

@@ -20,20 +20,24 @@ package server
 import (
 	"errors"
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
-// Report whether a process with the given pid exists.
-//   - Signal 0 performs the existence/permission check without delivering a signal;
-//   - EPERM means the process exists but is owned by another user.
-func processAlive(pid int) bool {
-	p, err := os.FindProcess(pid) // always succeeds on unix
-	if err != nil {
-		return false
+// Try to take an exclusive lock on f without blocking, and report false when another open of the file holds it.
+// flock locks belong to an open file, not a process, so a second open in this same process contends too.
+func tryLock(f *os.File) (bool, error) {
+	err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, unix.EWOULDBLOCK):
+		return false, nil
 	}
-	err = p.Signal(syscall.Signal(0))
-	if err == nil {
-		return true
-	}
-	return errors.Is(err, syscall.EPERM)
+	return false, err
+}
+
+// Free the lock taken on f by tryLock.
+func unlock(f *os.File) error {
+	return unix.Flock(int(f.Fd()), unix.LOCK_UN)
 }

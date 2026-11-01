@@ -18,84 +18,109 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-// lockFileName is the pidfile in the config dir that enforces a single running server.
+// lockFileName is the file in the config dir that enforces a single running server.
 const lockFileName = "unifiler.server.lock"
 
 // ErrLockHeld reports that a live server instance already owns the lock.
 var ErrLockHeld = errors.New("tf-unifiler server lock held by a running instance")
 
-// Lock is a pidfile guarding the server singleton; its content is the owning server's pid.
+// Lock guards the server singleton with an OS file lock, which the OS frees when its owner exits, however it exits.
+// The locked file records the owner's pid for display and stays in place once released.
 type Lock struct {
 	path string
+	file *os.File // open while this Lock holds the OS lock.
 }
 
-// Return a Lock backed by the pidfile in dir.
+// Return a Lock backed by the lock file in dir.
 func NewLock(dir string) *Lock {
 	return &Lock{path: filepath.Join(dir, lockFileName)}
 }
 
-// Acquire claims the lock for the current process, reclaiming a stale pidfile left by a dead owner.
+// Acquire claims the lock for the current process, or returns ErrLockHeld when another holds it.
 func (l *Lock) Acquire() error {
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return fmt.Errorf("creating lock directory: %w", err)
 	}
-	// Two attempts settle a race between two starters: the loser re-reads the winner's now-live pid on the second pass and gets ErrLockHeld.
-	for attempt := 0; attempt < 2; attempt++ {
-		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			return l.writePID(f)
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("creating lock: %w", err)
-		}
-		if pid, alive := l.Owner(); alive {
-			return fmt.Errorf("%w (pid %d)", ErrLockHeld, pid)
-		}
-		if err := os.Remove(l.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("removing stale lock: %w", err)
-		}
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("opening lock: %w", err)
 	}
-	return ErrLockHeld
+	locked, err := tryLock(f)
+	if err != nil {
+		return errors.Join(fmt.Errorf("locking: %w", err), f.Close())
+	}
+	if !locked {
+		return errors.Join(fmt.Errorf("%w (pid %d)", ErrLockHeld, readPID(f)), f.Close())
+	}
+	if err := writePID(f); err != nil {
+		return errors.Join(err, unlock(f), f.Close())
+	}
+	l.file = f
+	return nil
 }
 
-// Release removes the pidfile; safe to call when the lock is already gone.
+// Release frees the lock held by this Lock; safe to call when it holds none.
 func (l *Lock) Release() error {
-	if err := os.Remove(l.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("removing lock: %w", err)
+	if l.file == nil {
+		return nil
+	}
+	f := l.file
+	l.file = nil
+	if err := errors.Join(unlock(f), f.Close()); err != nil {
+		return fmt.Errorf("releasing lock: %w", err)
 	}
 	return nil
 }
 
-// Report the pid recorded in the pidfile and whether that process is still alive.
-// A missing, empty, or malformed pidfile reports (0, false).
+// Report the pid recorded by the process holding the lock and whether any process holds it.
+// It briefly takes the lock to test it, so a server acquiring at that instant gets ErrLockHeld.
+// The pid is 0 when the lock is free, or when its owner has not recorded a valid pid yet.
 func (l *Lock) Owner() (int, bool) {
-	b, err := os.ReadFile(l.path)
+	// Read-write because NFS emulates flock with a byte-range lock, which it refuses to make exclusive on a read-only open.
+	f, err := os.OpenFile(l.path, os.O_RDWR, 0)
 	if err != nil {
 		return 0, false
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || pid <= 0 {
+	defer f.Close()
+	locked, err := tryLock(f)
+	if err != nil {
 		return 0, false
 	}
-	return pid, processAlive(pid)
+	if locked {
+		// A failed unlock changes nothing: the deferred close frees the lock too, though Windows may do it late.
+		_ = unlock(f)
+		return 0, false
+	}
+	return readPID(f), true
 }
 
-// Record the current pid in the freshly created lock file f, cleaning up on failure.
-func (l *Lock) writePID(f *os.File) error {
-	if _, err := fmt.Fprintf(f, "%d\n", os.Getpid()); err != nil {
-		_ = f.Close()
-		_ = os.Remove(l.path)
-		return fmt.Errorf("writing pid to lock: %w", err)
+// Return the pid recorded in the lock file f, or 0 when it holds no valid pid.
+func readPID(f *os.File) int {
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return 0
 	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(l.path)
-		return fmt.Errorf("closing lock: %w", err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
+// Replace the content of the locked file f with the current pid.
+func writePID(f *os.File) error {
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("clearing lock: %w", err)
+	}
+	if _, err := f.WriteAt(fmt.Appendf(nil, "%d\n", os.Getpid()), 0); err != nil {
+		return fmt.Errorf("writing pid to lock: %w", err)
 	}
 	return nil
 }
