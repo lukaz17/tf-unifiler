@@ -51,7 +51,7 @@ func Connect(uri string, log zerolog.Logger) (*DbContext, error) {
 	}
 	c := &DbContext{db, uri}
 	if err := c.Migrate(); err != nil {
-		return nil, err
+		return nil, errors.Join(err, c.Disconnect())
 	}
 	return c, nil
 }

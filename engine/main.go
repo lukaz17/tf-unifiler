@@ -27,7 +27,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/diag"
-	"github.com/tforceaio/tf-unifiler/filesys"
 	"github.com/tforceaio/tf-unifiler/tui"
 )
 
@@ -70,20 +69,23 @@ func InitAppWithBanner(ctx context.Context) (*Controller, error) {
 		return nil, err
 	}
 
-	pwd, _ := os.Getwd()
-	pwd, _ = filesys.GetAbsPath(pwd)
-	exec, _ := os.Executable()
-	exec, _ = filesys.GetAbsPath(exec)
-
 	fmt.Printf("\nTFunifiler v%s\n", version())
 	gitDate2, _ := time.Parse("20060102", gitDate)
 	buildDate := opx.Ternary(gitDate == "", time.Now().UTC(), gitDate2)
 	fmt.Printf("Copyright (C) %d T-Force I/O\n", buildDate.Year())
 	fmt.Printf("Licensed under GPL-3.0 license. See COPYING file along with this program for more details.\n\n")
 	ctrl.Logger.Info().Msg("-----------------")
-	ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	if pwd, err := os.Getwd(); err != nil {
+		ctrl.Logger.Warn().Err(err).Msg("Cannot locate working directory.")
+	} else {
+		ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	}
 	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
-	ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	if exec, err := os.Executable(); err != nil {
+		ctrl.Logger.Warn().Err(err).Msg("Cannot locate executable file.")
+	} else {
+		ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	}
 	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.Portable)
 	if len(ctrl.Config.AppliedEnvVars) > 0 {
 		ctrl.Logger.Info().Msgf("Environment variables overriding config %s", strings.Join(ctrl.Config.AppliedEnvVars, ", "))

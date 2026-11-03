@@ -16,8 +16,67 @@
 package engine
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/tforceaio/tf-unifiler/config"
 )
+
+func TestMirrorExportClosesInvalidChecksumFile(t *testing.T) {
+	workspace := t.TempDir()
+	checksumFile := filepath.Join(t.TempDir(), "photos.sha256")
+	if err := os.WriteFile(checksumFile, []byte("zz *photo.jpg\n"), 0644); err != nil {
+		t.Fatalf("creating checksum file: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	args := []string{"mirror", "export", "-w", workspace, "-i", checksumFile}
+
+	var out bytes.Buffer
+	err := RunTask(base, args, context.Background(), &out)
+
+	if err == nil {
+		t.Fatalf("RunTask(%v) succeeded with an invalid hash, want an error", args)
+	}
+	// Windows refuses to delete a file that is still open.
+	if err := os.Remove(checksumFile); err != nil {
+		t.Errorf("deleting checksum file after export: %v", err)
+	}
+}
+
+func TestMirrorExportFailsOnUnresolvableOutput(t *testing.T) {
+	// An export that ignores the failure links into the current folder.
+	t.Chdir(t.TempDir())
+	workspace := t.TempDir()
+	content := []byte("photo")
+	hash := sha256.Sum256(content)
+	hashHex := hex.EncodeToString(hash[:])
+	if err := os.MkdirAll(MirrorWorkspaceRoot(workspace), 0755); err != nil {
+		t.Fatalf("creating store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(MirrorWorkspaceRoot(workspace), hashHex), content, 0644); err != nil {
+		t.Fatalf("creating stored file: %v", err)
+	}
+	checksumFile := filepath.Join(t.TempDir(), "photos.sha256")
+	if err := os.WriteFile(checksumFile, fmt.Appendf(nil, "%s *album/photo.jpg\n", hashHex), 0644); err != nil {
+		t.Fatalf("creating checksum file: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	// Windows cannot resolve a path containing NUL.
+	args := []string{"mirror", "export", "-w", workspace, "-i", checksumFile, "-o", "out\x00dir"}
+
+	var out bytes.Buffer
+	err := RunTask(base, args, context.Background(), &out)
+
+	if err == nil {
+		t.Errorf("RunTask(%q) succeeded with an output folder that cannot be resolved, want an error", args)
+	}
+}
 
 func TestParseMirrorFlagsKeepsCommaInInput(t *testing.T) {
 	cmd, _, err := MirrorCmd().Find([]string{"scan"})

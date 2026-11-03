@@ -48,7 +48,14 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 		return cfg, nil
 	}
 
-	isPortable := !useFS || IsPortable()
+	isPortable := !useFS
+	if useFS {
+		portable, err := IsPortable()
+		if err != nil {
+			return nil, err
+		}
+		isPortable = portable
+	}
 	configFile, err := configFilePath(isPortable)
 	if err != nil {
 		return nil, err
@@ -106,11 +113,14 @@ func DefaultConfig() (*koanf.Koanf, error) {
 	return k, nil
 }
 
-// Check if the application is in portable mode.
-func IsPortable() bool {
-	exec, _ := os.Executable()
+// Check if the application is in portable mode, marked by a unifiler.portable file next to the executable.
+func IsPortable() (bool, error) {
+	exec, err := os.Executable()
+	if err != nil {
+		return false, fmt.Errorf("locating executable: %w", err)
+	}
 	portableFile := filepath.Join(filepath.Dir(exec), "unifiler.portable")
-	return fileExists(portableFile)
+	return fileExists(portableFile), nil
 }
 
 // Load the YAML config file f with its keys lowercased, so they match settings case-insensitively.

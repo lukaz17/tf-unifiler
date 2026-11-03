@@ -33,7 +33,6 @@ import (
 	"github.com/tforce-io/tf-golib/opx"
 	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/engine"
-	"github.com/tforceaio/tf-unifiler/filesys"
 	"github.com/tforceaio/tf-unifiler/server"
 	"github.com/tforceaio/tf-unifiler/task"
 	"github.com/tforceaio/tf-unifiler/tui"
@@ -173,20 +172,25 @@ func (m *ServerModule) showTaskStatus(n *tui.BubbleteaNotifier, onInterrupt func
 	return view
 }
 
-// Gather the static identity reported by the server's status endpoint.
+// Gather the static identity reported by the server's status endpoint; a path that cannot be located is logged and left empty.
 func (m *ServerModule) statusInfo() server.StatusInfo {
-	pwd, _ := os.Getwd()
-	pwd, _ = filesys.GetAbsPath(pwd)
-	exec, _ := os.Executable()
-	exec, _ = filesys.GetAbsPath(exec)
-	return server.StatusInfo{
-		Service:    m.cfg.Server.Name,
-		Version:    engine.Version(),
-		WorkingDir: pwd,
-		ConfigDir:  m.cfg.ConfigDir,
-		Executable: exec,
-		Portable:   m.cfg.Portable,
+	info := server.StatusInfo{
+		Service:   m.cfg.Server.Name,
+		Version:   engine.Version(),
+		ConfigDir: m.cfg.ConfigDir,
+		Portable:  m.cfg.Portable,
 	}
+	if pwd, err := os.Getwd(); err != nil {
+		m.logger.Warn().Err(err).Msg("Cannot locate working directory.")
+	} else {
+		info.WorkingDir = pwd
+	}
+	if exec, err := os.Executable(); err != nil {
+		m.logger.Warn().Err(err).Msg("Cannot locate executable file.")
+	} else {
+		info.Executable = exec
+	}
+	return info
 }
 
 // Refresh the view's task counts from the queue every taskStatsInterval, and return a function that stops refreshing and waits for it to end.

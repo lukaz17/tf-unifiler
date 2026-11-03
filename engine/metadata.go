@@ -80,11 +80,11 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 		if !filesys.IsDirectoryExist(rootDir) {
 			return errors.New("input is not found or is not a directory")
 		}
-		ctx, err := db.Connect(dbFile, m.logger)
-		defer ctx.Disconnect()
+		ctx, err = db.Connect(dbFile, m.logger)
 		if err != nil {
 			return err
 		}
+		defer ctx.Disconnect()
 		err = validateArchiveName(ctx, archiveName, update)
 		if err != nil {
 			return err
@@ -143,10 +143,10 @@ func (m *MetadataModule) Index(workspaceDir string, inputs, collections []string
 
 	if ctx == nil {
 		ctx, err = db.Connect(dbFile, m.logger)
-		defer ctx.Disconnect()
 		if err != nil {
 			return err
 		}
+		defer ctx.Disconnect()
 	}
 	err = m.saveIResults(ctx, hResults, delete, collections, archiveName, rootDir, update)
 	if err != nil {
@@ -187,6 +187,7 @@ func (m *MetadataModule) Refine(workspaceDir string, inputs, collections []strin
 	if err != nil {
 		return err
 	}
+	defer ctx.Disconnect()
 
 	for _, r := range fhResults {
 		sha256 := hex.EncodeToString(r.Hashes[3].Hash)
@@ -246,6 +247,7 @@ func (m *MetadataModule) QueryHash(workspaceDir string, collections, sha256s []s
 	if err != nil {
 		return err
 	}
+	defer ctx.Disconnect()
 
 	hashes, err := ctx.GetHashesInSets(collections, sha256s, obsoleted)
 	if err != nil {
@@ -271,6 +273,7 @@ func (m *MetadataModule) QuerySession(workspaceDir string, sessionID string) err
 	if err != nil {
 		return err
 	}
+	defer ctx.Disconnect()
 
 	if sessionID == "" {
 		sessions, err := ctx.GetSessions()
@@ -324,6 +327,7 @@ func (m *MetadataModule) QuerySet(workspaceDir, setName string) error {
 	if err != nil {
 		return err
 	}
+	defer ctx.Disconnect()
 
 	if setName == "" {
 		sets, err := ctx.GetSetsByNames([]string{})

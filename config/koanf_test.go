@@ -236,6 +236,44 @@ func TestInitKoanfRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+func TestIsPortableFindsMarkerNextToExecutable(t *testing.T) {
+	exec, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locating test binary: %v", err)
+	}
+	marker := filepath.Join(filepath.Dir(exec), "unifiler.portable")
+	tests := []struct {
+		name      string
+		hasMarker bool
+	}{
+		{"no marker", false},
+		{"marker next to executable", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.hasMarker {
+				if err := os.WriteFile(marker, nil, 0644); err != nil {
+					t.Fatalf("creating marker: %v", err)
+				}
+				t.Cleanup(func() {
+					if err := os.Remove(marker); err != nil {
+						t.Errorf("removing marker: %v", err)
+					}
+				})
+			}
+
+			portable, err := IsPortable()
+
+			if err != nil {
+				t.Fatalf("IsPortable: %v", err)
+			}
+			if portable != tt.hasMarker {
+				t.Errorf("IsPortable() = %t, want %t", portable, tt.hasMarker)
+			}
+		})
+	}
+}
+
 func TestSanitizeKey(t *testing.T) {
 	if got, err := SanitizeKey("Server.APIKey"); err != nil || got != KeyServerAPIKey {
 		t.Errorf("SanitizeKey(%q) = %q, %v; want %q", "Server.APIKey", got, err, KeyServerAPIKey)

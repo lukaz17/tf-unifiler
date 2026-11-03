@@ -26,8 +26,8 @@ type FFmpegArgs struct {
 }
 
 type FFmpegArgsOptions struct {
-	InputFile      string
-	InputStartTime nullable.Int
+	InputFile        string
+	InputStartTimeMs nullable.Int
 
 	OutputFile       string
 	OutputFrameCount nullable.Int
@@ -39,8 +39,9 @@ type FFmpegArgsOptions struct {
 
 func (args FFmpegArgs) Compile() []string {
 	results := []string{}
-	if args.Options.InputStartTime.IsValid {
-		results = append(results, "-ss", strconv.Itoa(args.Options.InputStartTime.RealValue))
+	if args.Options.InputStartTimeMs.IsValid {
+		startTime := float64(args.Options.InputStartTimeMs.RealValue) / 1000
+		results = append(results, "-ss", strconv.FormatFloat(startTime, 'f', 3, 64))
 	}
 	if args.Options.InputFile != "" {
 		results = append(results, "-i", args.Options.InputFile)

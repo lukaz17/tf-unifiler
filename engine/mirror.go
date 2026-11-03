@@ -18,6 +18,7 @@ package engine
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -68,11 +69,11 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	if err != nil {
 		return err
 	}
+	defer checksumReader.Close()
 	items, err := checksum.ParseSha256(checksumReader)
 	if err != nil {
 		return err
 	}
-	defer checksumReader.Close()
 
 	missingItems := []string{}
 	for _, l := range items {
@@ -93,10 +94,16 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	}
 	targetRoot := targetDir
 	if targetRoot == "" {
-		checksumPath, _ := filesys.GetAbsPath(checksumFile)
+		checksumPath, err := filesys.GetAbsPath(checksumFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve checksum file path: %w", err)
+		}
 		targetRoot, _ = filepath.Split(checksumPath)
 	} else {
-		targetRoot, _ = filesys.GetAbsPath(targetDir)
+		targetRoot, err = filesys.GetAbsPath(targetDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve output folder path: %w", err)
+		}
 	}
 	if filesys.IsFileExist(targetRoot) {
 		return errors.New("a file with same name with target root existed")
