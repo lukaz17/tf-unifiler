@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
 	"github.com/rs/zerolog"
@@ -115,15 +114,18 @@ func (m *ConfigModule) Set(key, value string) error {
 	if err := validateRequiredString(value, "value"); err != nil {
 		return err
 	}
-
-	k := koanf.New(".")
-	if _, err := os.Stat(m.cfg.ConfigFile); err == nil {
-		err = k.Load(file.Provider(m.cfg.ConfigFile), yaml.Parser())
-		if err != nil {
-			return err
-		}
+	// An unknown key would be written, then fail every later load of the file.
+	key, err := config.SanitizeKey(key)
+	if err != nil {
+		return err
 	}
-	err := k.Set(key, value)
+
+	// Loaded with lowercase keys, so the file never holds two keys that differ only in case.
+	k, err := config.LoadFile(m.cfg.ConfigFile)
+	if err != nil {
+		return err
+	}
+	err = k.Set(key, value)
 	if err != nil {
 		return err
 	}
@@ -179,7 +181,10 @@ func ConfigCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Export active configuration to stdout or file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -193,7 +198,10 @@ func ConfigCmd() *cobra.Command {
 		Use:   "get [key]",
 		Short: "Get the active value of a configuration key.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp(cmd.Context())
+			c, err := InitApp(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)
@@ -206,7 +214,10 @@ func ConfigCmd() *cobra.Command {
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value in the active YAML file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitApp(cmd.Context())
+			c, err := InitApp(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			m := NewConfigModule(c)
 			f := m.ParseConfigFlags(cmd, args)

@@ -219,7 +219,10 @@ func MirrorCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Create file structure defined by checksum file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, []string{})
 			m := NewMirrorModule(c, "export")
@@ -234,7 +237,10 @@ func MirrorCmd() *cobra.Command {
 		Use:   "scan",
 		Short: "Scan inputs and import them to mirror repository.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, args)
 			m := NewMirrorModule(c, "export")

@@ -221,7 +221,10 @@ func (m *ServerModule) logError(err error) error {
 // Define Cobra Command for Server module.
 func ServerCmd() *cobra.Command {
 	start := func(cmd *cobra.Command, args []string) error {
-		c := engine.InitAppWithBanner(context.TODO())
+		c, err := engine.InitAppWithBanner(context.TODO())
+		if err != nil {
+			return err
+		}
 		defer c.Close()
 		m := NewServerModule(c, "start")
 		return m.logError(m.Start())
@@ -241,7 +244,10 @@ func ServerCmd() *cobra.Command {
 		Short: "Generate a random API key and save it to the configuration file.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := engine.InitApp(context.TODO())
+			c, err := engine.InitApp(context.TODO())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			m := NewServerModule(c, "generate-api-key")
 			force, _ := cmd.Flags().GetBool("force")
@@ -264,7 +270,10 @@ func ServerCmd() *cobra.Command {
 		Short: "Stop the running RPC server.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := engine.InitAppWithBanner(context.TODO())
+			c, err := engine.InitAppWithBanner(context.TODO())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			m := NewServerModule(c, "stop")
 			return m.logError(m.Stop())

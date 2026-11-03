@@ -26,7 +26,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
+	"github.com/tforceaio/tf-unifiler/diag"
 	"github.com/tforceaio/tf-unifiler/filesys"
+	"github.com/tforceaio/tf-unifiler/tui"
 )
 
 var majorVersion = 0
@@ -44,20 +46,29 @@ type taskRuntimeValue struct {
 }
 
 // Initialize configurations, loggings for internal modules.
-func InitApp(ctx context.Context) *Controller {
+func InitApp(ctx context.Context) (*Controller, error) {
 	if c := getTaskScopedController(ctx); c != nil {
-		return c
+		return c, nil
 	}
-	return NewController(true)
+	c, err := InitController(true)
+	if err != nil {
+		// No configured logger without configuration, so log to the console only.
+		logger := diag.NewLoggerFromWriter(diag.NewLogWriterTo(os.Stdout, tui.IsTTY(), nil))
+		return nil, LogCommandError(logger, err)
+	}
+	return c, nil
 }
 
 // Initialize configurations, loggings for internal modules, and display app banner.
-func InitAppWithBanner(ctx context.Context) *Controller {
+func InitAppWithBanner(ctx context.Context) (*Controller, error) {
 	if c := getTaskScopedController(ctx); c != nil {
-		return c
+		return c, nil
 	}
 
-	ctrl := InitApp(ctx)
+	ctrl, err := InitApp(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	pwd, _ := os.Getwd()
 	pwd, _ = filesys.GetAbsPath(pwd)
@@ -74,9 +85,12 @@ func InitAppWithBanner(ctx context.Context) *Controller {
 	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
 	ctrl.Logger.Info().Msgf("Executable file %s", exec)
 	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.Portable)
+	if len(ctrl.Config.AppliedEnvVars) > 0 {
+		ctrl.Logger.Info().Msgf("Environment variables overriding config %s", strings.Join(ctrl.Config.AppliedEnvVars, ", "))
+	}
 	ctrl.Logger.Info().Msg("-----------------")
 
-	return ctrl
+	return ctrl, nil
 }
 
 // Assemble the root command with every commands defined in the engine.

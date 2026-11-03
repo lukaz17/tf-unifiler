@@ -16,10 +16,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -37,7 +40,7 @@ var (
 
 const configFileName = "unifiler.yaml"
 
-// Init configuration for the application.
+// Init configuration for the application. A failed load is not kept, so the next call loads again.
 func InitKoanf(useFS bool) (*RootConfig, error) {
 	cfgMu.Lock()
 	defer cfgMu.Unlock()
@@ -46,28 +49,20 @@ func InitKoanf(useFS bool) (*RootConfig, error) {
 	}
 
 	isPortable := !useFS || IsPortable()
-	configFile := configFileName
-
-	if isPortable {
-		exec, _ := os.Executable()
-		configFile = filepath.Join(filepath.Dir(exec), configFileName)
-	} else if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		home := os.Getenv("HOME")
-		configFile = filepath.Join(home, ".config", "tfunifiler", configFileName)
-	} else if runtime.GOOS == "windows" {
-		appData := os.Getenv("APPDATA")
-		configFile = filepath.Join(appData, "TFunifiler", configFileName)
-	}
-
-	var err error
-	cfg, err = buildConfig(useFS, configFile)
+	configFile, err := configFilePath(isPortable)
 	if err != nil {
-		return cfg, err
+		return nil, err
 	}
 
-	cfg.ConfigDir = filepath.Dir(configFile)
-	cfg.ConfigFile = configFile
-	cfg.Portable = isPortable
+	loaded, err := buildConfig(useFS, configFile)
+	if err != nil {
+		return nil, err
+	}
+
+	loaded.ConfigDir = filepath.Dir(configFile)
+	loaded.ConfigFile = configFile
+	loaded.Portable = isPortable
+	cfg = loaded
 	return cfg, nil
 }
 
@@ -118,55 +113,168 @@ func IsPortable() bool {
 	return fileExists(portableFile)
 }
 
+// Load the YAML config file f with its keys lowercased, so they match settings case-insensitively.
+func LoadFile(f string) (*koanf.Koanf, error) {
+	parsed := koanf.New(".")
+	err := parsed.Load(file.Provider(f), yaml.Parser())
+	if errors.Is(err, fs.ErrNotExist) {
+		return koanf.New("."), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("config file %s: %w", f, err)
+	}
+	loaded, err := normalizeKeys(parsed)
+	if err != nil {
+		return nil, fmt.Errorf("config file %s: %w", f, err)
+	}
+	return loaded, nil
+}
+
+// Return key in the lowercase form settings are stored under, such as "server.http.port" for "Server.HTTP.Port".
+// Return error if the key refers to non-existence conifg.
+func SanitizeKey(key string) (string, error) {
+	defaults, err := DefaultConfig()
+	if err != nil {
+		return "", err
+	}
+	lower := strings.ToLower(key)
+	if !slices.Contains(defaults.Keys(), lower) {
+		return "", fmt.Errorf("unknown setting %q", key)
+	}
+	return lower, nil
+}
+
 // Build configurations for the application with the following priority:
 // Environment variables -> YAML configuration file -> default values.
 func buildConfig(useFS bool, f string) (*RootConfig, error) {
 	k, err := DefaultConfig()
 	if err != nil {
-		return &RootConfig{}, err
+		return nil, err
 	}
 
-	var loadErr error
-	if useFS && fileExists(f) {
+	if useFS {
 		if _, err := configFromYaml(k, f); err != nil {
-			loadErr = fmt.Errorf("loading config file %s: %w", f, err)
+			return nil, err
 		}
 	}
-	if _, err := configFromEnv(k); err != nil && loadErr == nil {
-		loadErr = fmt.Errorf("loading environment config: %w", err)
+	applied, ignored, err := configFromEnv(k)
+	if err != nil {
+		return nil, err
 	}
 
 	var config RootConfig
 	if err := k.Unmarshal("", &config); err != nil {
-		return &config, err
+		return nil, fmt.Errorf("decoding settings: %w", err)
 	}
-	return &config, loadErr
+	config.AppliedEnvVars = applied
+	config.IgnoredEnvVars = ignored
+	return &config, nil
+}
+
+// Return the path of the config file: next to the executable in portable mode, otherwise in the user's config folder.
+func configFilePath(isPortable bool) (string, error) {
+	if isPortable {
+		exec, err := os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("locating executable: %w", err)
+		}
+		return filepath.Join(filepath.Dir(exec), configFileName), nil
+	}
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		// Not os.UserConfigDir, which follows XDG_CONFIG_HOME and is ~/Library/Application Support on macOS.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locating config folder: %w", err)
+		}
+		return filepath.Join(home, ".config", "tfunifiler", configFileName), nil
+	case "windows":
+		appData, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("locating config folder: %w", err)
+		}
+		return filepath.Join(appData, "TFunifiler", configFileName), nil
+	}
+	return configFileName, nil
 }
 
 // Get configuration values from environment variables.
-func configFromEnv(k *koanf.Koanf) (*koanf.Koanf, error) {
-	err := k.Load(env.Provider("TFUNIFILER_", ".", func(s string) string {
-		return strings.Replace(
+// Return the names of the variables applied, then of those naming no setting; the latter are skipped, so a stray variable does not stop the program.
+func configFromEnv(k *koanf.Koanf) ([]string, []string, error) {
+	names := make(map[string]string) // setting key -> variable name, to report applied and skipped variables.
+	vars := koanf.New(".")
+	err := vars.Load(env.Provider("TFUNIFILER_", ".", func(s string) string {
+		key := strings.Replace(
 			strings.ToLower(
 				strings.TrimPrefix(s, "TFUNIFILER_")), "_", ".", -1)
+		names[key] = s
+		return key
 	}), nil)
 	if err != nil {
-		return k, err
+		return nil, nil, err
 	}
-	return k, nil
+
+	defaults, err := DefaultConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	var applied, ignored []string
+	for _, key := range vars.Keys() {
+		if defaults.Exists(key) {
+			applied = append(applied, names[key])
+			continue
+		}
+		ignored = append(ignored, names[key])
+		vars.Delete(key)
+	}
+	return applied, ignored, k.Merge(vars)
 }
 
 // Get configuration values from YAML file.
 func configFromYaml(k *koanf.Koanf, f string) (*koanf.Koanf, error) {
-	err := k.Load(file.Provider(f), yaml.Parser())
+	loaded, err := LoadFile(f)
 	if err != nil {
 		return k, err
 	}
-	return k, nil
+	return k, k.Merge(loaded)
 }
 
 // Return whether a file existed in file system.
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// Return the values of src under lowercase keys.
+func normalizeKeys(src *koanf.Koanf) (*koanf.Koanf, error) {
+	defaults, err := DefaultConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	var unknown []string
+	seen := make(map[string]string) // lowercase key -> key as written.
+	out := koanf.New(".")
+	for _, key := range src.Keys() {
+		lower := strings.ToLower(key)
+		if !defaults.Exists(lower) {
+			unknown = append(unknown, key)
+			continue
+		}
+		val := src.Get(key)
+		if val == nil {
+			continue
+		}
+		if prev, ok := seen[lower]; ok {
+			return nil, fmt.Errorf("keys %q and %q name the same setting", prev, key)
+		}
+		seen[lower] = key
+		if err := out.Set(lower, val); err != nil {
+			return nil, err
+		}
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("unknown keys: %s", strings.Join(unknown, ", "))
+	}
+	return out, nil
 }

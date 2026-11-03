@@ -141,7 +141,10 @@ func ChecksumCmd() *cobra.Command {
 		Use:   "create <input>...",
 		Short: "Create checksum file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseChecksumFlags(cmd, args)
 			m := NewChecksumModule(c, "create")

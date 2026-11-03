@@ -262,7 +262,10 @@ func VideoCmd() *cobra.Command {
 		Use:   "info",
 		Short: "Analyze video file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "info")
@@ -278,7 +281,10 @@ func VideoCmd() *cobra.Command {
 		Use:   "extract-frames",
 		Short: "Extract multiple frames in video file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "screenshot")

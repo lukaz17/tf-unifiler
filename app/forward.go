@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -53,6 +54,9 @@ func runQueued(args []string) error {
 	cfg, err := config.InitKoanf(true)
 	if err != nil {
 		return fmt.Errorf("loading configuration: %w", err)
+	}
+	if len(cfg.IgnoredEnvVars) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: ignoring environment variables that name no setting: %s\n", strings.Join(cfg.IgnoredEnvVars, ", "))
 	}
 	host := server.DialHost(cfg.Server.HTTP.Hostname)
 	addr := net.JoinHostPort(host, strconv.Itoa(cfg.Server.HTTP.Port))
