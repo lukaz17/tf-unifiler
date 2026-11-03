@@ -174,12 +174,30 @@ func (m *ConfigModule) writeFile(path string, data []byte) error {
 func ConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage application configuration.",
+		Short: "Manage application settings.",
+		Long: `Manage application settings, which come from unifiler.yaml in the config
+folder. Environment variables override them, and a setting found in neither
+keeps its default. Run "unifiler config export" to list every key.
+
+The config folder, which also holds the log file logs/unifiler.log, is:
+  - Windows: %APPDATA%\TFunifiler
+  - Linux and macOS: ~/.config/tfunifiler
+  - Portable mode, when a file named unifiler.portable is next to the
+    executable: the executable's folder
+
+An environment variable is named TFUNIFILER_ followed by the key in upper case,
+with _ in place of ., such as TFUNIFILER_LOG_LEVEL=debug.`,
 	}
 
 	exportCmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export active configuration to stdout or file.",
+		Short: "Print every setting in use as YAML, or save it to a file.",
+		Long: `Print every setting in use, after environment variables are applied, as YAML,
+or save it to the --output file.
+
+The output includes server.apikey when an API key is set, so keep it private.`,
+		Example: `  unifiler config export
+  unifiler config export --diff -o settings.yaml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -191,12 +209,16 @@ func ConfigCmd() *cobra.Command {
 			return m.logError(m.Export(f.Output, f.Diff))
 		},
 	}
-	exportCmd.Flags().BoolP("diff", "d", false, "Export differences from default configuration only.")
-	exportCmd.Flags().StringP("output", "o", "", "Output file path. Empty will output to stdout.")
+	exportCmd.Flags().BoolP("diff", "d", false, "Only export the settings that differ from the defaults.")
+	exportCmd.Flags().StringP("output", "o", "", "File to save the YAML to; printed to the terminal when empty.")
 
 	getCmd := &cobra.Command{
-		Use:   "get [key]",
-		Short: "Get the active value of a configuration key.",
+		Use:   "get <key>",
+		Short: "Print the value in use for a setting.",
+		Long: `Print the value in use for a setting, from the config file, an environment
+variable or the default. Keys are dot-separated, such as paths.x7z; nothing is
+printed for an unknown key.`,
+		Example: `  unifiler config get paths.x7z`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitApp(cmd.Context())
 			if err != nil {
@@ -208,11 +230,16 @@ func ConfigCmd() *cobra.Command {
 			return m.logError(m.Get(f.Key))
 		},
 	}
-	getCmd.Flags().StringP("key", "k", "", "Configuration key in dot-delimited format.")
+	getCmd.Flags().StringP("key", "k", "", "Setting key, such as paths.x7z; same as the <key> argument.")
 
 	setCmd := &cobra.Command{
-		Use:   "set <key> [value]",
-		Short: "Set a configuration value in the active YAML file.",
+		Use:   "set <key> <value>",
+		Short: "Save a setting to the config file.",
+		Long: `Save a setting to unifiler.yaml in the config folder; an unknown key is
+rejected. An environment variable for the same key still overrides the file,
+and a running server applies the change only after a restart.`,
+		Example: `  unifiler config set paths.x7z /opt/7-zip/7zz
+  unifiler config set server.concurrency 2`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitApp(cmd.Context())
 			if err != nil {
@@ -224,8 +251,8 @@ func ConfigCmd() *cobra.Command {
 			return m.logError(m.Set(f.Key, f.Value))
 		},
 	}
-	setCmd.Flags().StringP("key", "k", "", "Configuration key in dot-delimited format.")
-	setCmd.Flags().StringP("value", "v", "", "Configuration value")
+	setCmd.Flags().StringP("key", "k", "", "Setting key, such as paths.x7z; same as the <key> argument.")
+	setCmd.Flags().StringP("value", "v", "", "Value to save; same as the <value> argument.")
 
 	cmd.AddCommand(exportCmd, getCmd, setCmd)
 

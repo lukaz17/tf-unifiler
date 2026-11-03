@@ -281,14 +281,19 @@ func (m *FileModule) logError(err error) error {
 func FileCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "file",
-		Short: "Batch processing file.",
+		Short: "Work with files in general.",
 	}
 	MarkCommandQueueable(rootCmd)
-	rootCmd.PersistentFlags().StringArrayP("inputs", "i", []string{}, "Files/Directories to process.")
+	rootCmd.PersistentFlags().StringArrayP("inputs", "i", []string{}, "Files or folders to process, in addition to the arguments; repeat for several.")
 
 	hashCmd := &cobra.Command{
 		Use:   "hash <input>...",
-		Short: "Compute and print hashes for files.",
+		Short: "Print the CRC32, MD5, SHA-1, SHA-256 and SHA-512 of files.",
+		Long: `Print the size and the CRC32, MD5, SHA-1, SHA-256 and SHA-512 hashes of every
+file in the inputs, going through folders recursively.
+
+To save hashes to a file, use "unifiler checksum create".`,
+		Example: `  unifiler file hash a.iso ./photos`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -304,7 +309,20 @@ func FileCmd() *cobra.Command {
 
 	packCmd := &cobra.Command{
 		Use:   "pack <input>...",
-		Short: "Pack files into an archive.",
+		Short: "Compress files and folders into 7z or RAR archives.",
+		Long: `Compress the inputs into the archive --output, or with --separate, each input
+into its own archive, <input name>.<format>, in the folder --output. In a
+terminal, a form shows the options to review before packing.
+
+Needs 7-Zip (7z) or RAR (rar) on PATH, or their location in the paths.x7z or
+paths.rar setting.
+
+Warning: --move and --normalize change the original files. --move deletes the
+inputs once they are packed. --normalize, before packing, sets their dates to
+2020-02-02 12:00 UTC and, on Windows, sets their Archive attribute and clears
+their Read-only, Hidden and System attributes.`,
+		Example: `  unifiler file pack ./photos -o photos.7z -l ultra
+  unifiler file pack ./a ./b -o ./archives --separate -f rar`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -316,22 +334,33 @@ func FileCmd() *cobra.Command {
 			return m.logError(m.Pack(flags.Inputs, flags.Output, flags.Format, flags.Level, flags.Solid, flags.DictSize, flags.Password, flags.Threads, flags.Move, flags.Normalize, flags.Separate))
 		},
 	}
-	packCmd.Flags().IntP("dict", "d", 0, "Dictionary size in MB for compression (0 = use default).")
-	packCmd.Flags().StringP("format", "f", "7z", "Archive format: rar or 7z.")
-	packCmd.Flags().StringP("level", "l", "normal", "Compression level: none (0), fast (1), normal (2), high (3), ultra (4)")
-	packCmd.Flags().BoolP("move", "m", false, "Move files into archive after compression.")
-	packCmd.Flags().BoolP("normalize", "n", false, "Normalize file attributes before compression.")
-	packCmd.Flags().StringP("output", "o", "", "Output archive file path.")
-	packCmd.Flags().String("password", "", "Password to protect the archive.")
+	packCmd.Flags().IntP("dict", "d", 0, "Dictionary size in MB; 0 uses the archiver's default.")
+	packCmd.Flags().StringP("format", "f", "7z", "Archive format: 7z or rar.")
+	packCmd.Flags().StringP("level", "l", "normal", "Compression level: none, fast, normal, high or ultra, or 0 to 4.")
+	packCmd.Flags().BoolP("move", "m", false, "Delete the inputs once they are packed.")
+	packCmd.Flags().BoolP("normalize", "n", false, "Reset the dates and attributes of the inputs before packing; changes the original files.")
+	packCmd.Flags().StringP("output", "o", "", "Archive to create, or with --separate, folder to create the archives in. Required.")
+	packCmd.Flags().String("password", "", "Password to encrypt the archive with.")
 	MarkFlagSensitive(packCmd, "password")
-	packCmd.Flags().BoolP("separate", "e", false, "Compress each input into a separate archive.")
-	packCmd.Flags().BoolP("solid", "s", false, "Enable solid mode for better compression ratio.")
-	packCmd.Flags().IntP("threads", "t", 0, "Number of threads to use for compression.")
+	packCmd.Flags().BoolP("separate", "e", false, "Pack each input into its own archive, named after it, in the --output folder.")
+	packCmd.Flags().BoolP("solid", "s", false, "Use solid compression: a better ratio, but slower to extract single files.")
+	packCmd.Flags().IntP("threads", "t", 0, "Number of compression threads; 0 lets the archiver decide.")
 	rootCmd.AddCommand(packCmd)
 
 	renameCmd := &cobra.Command{
 		Use:   "rename <input>...",
-		Short: "Multi-rename files and directories.",
+		Short: "Rename many files at once with a naming preset.",
+		Long: `Rename many files at once, following the naming preset given with --preset.
+Folders given as inputs are ignored, and a file whose new name is already taken
+is skipped. Before renaming, the old and new names are saved to
+unifiler-file-rename-<timestamp>.json in the current folder.
+
+Presets:
+  crc32, md4, md5, sha1, sha256, sha512
+    Name each file after the hash of its content: <prefix><hash><extension>,
+    where <prefix> is the preset name in hex followed by "_", such as
+    736861323536_ for sha256.`,
+		Example: `  unifiler file rename a.jpg b.jpg -p sha256`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -343,7 +372,7 @@ func FileCmd() *cobra.Command {
 			return m.logError(m.Rename(flags.Inputs, flags.Preset))
 		},
 	}
-	renameCmd.Flags().StringP("preset", "p", "", "Name of pre-defined settings for renaming.")
+	renameCmd.Flags().StringP("preset", "p", "", "Naming preset: crc32, md4, md5, sha1, sha256 or sha512. Required.")
 	rootCmd.AddCommand(renameCmd)
 
 	return rootCmd

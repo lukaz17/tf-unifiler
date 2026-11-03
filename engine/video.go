@@ -84,7 +84,7 @@ func (m *VideoModule) Info(file string) error {
 }
 
 // Take screenshots for videos file from offset of the video file, for a limit duration, every interval.
-// All time are in seconds. Quality factor range from 1-100.
+// All time are in seconds. Quality is FFmpeg's JPEG scale, from 1 (best) to 31.
 func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64, quality int, outputDir string) error {
 	if err := validateInput(file, "input"); err != nil {
 		return err
@@ -253,14 +253,20 @@ func (m *VideoModule) logError(err error) error {
 func VideoCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "video",
-		Short: "Batch processing video file.",
+		Short: "Work with video files.",
 	}
 	MarkCommandQueueable(rootCmd)
-	rootCmd.PersistentFlags().StringP("file", "i", "", "Input video file.")
+	rootCmd.PersistentFlags().StringP("file", "i", "", "Video file; same as the <file> argument.")
 
 	infoCmd := &cobra.Command{
-		Use:   "info",
-		Short: "Analyze video file.",
+		Use:   "info <file>",
+		Short: "Save a video's media information to <file>.mediainfo.json.",
+		Long: `Run MediaInfo on the video and save its report, as JSON, to
+<file>.mediainfo.json next to it.
+
+Needs MediaInfo CLI (mediainfo) on PATH, or its location in the
+paths.mediainfo setting.`,
+		Example: `  unifiler video info movie.mkv`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -278,8 +284,18 @@ func VideoCmd() *cobra.Command {
 	rootCmd.AddCommand(infoCmd)
 
 	extractFramesCmd := &cobra.Command{
-		Use:   "extract-frames",
-		Short: "Extract multiple frames in video file.",
+		Use:   "extract-frames <file>",
+		Short: "Save JPEG frames taken across a video.",
+		Long: `Save one JPEG frame every --interval seconds, from --offset to --limit, as
+<file name>_<h>_<mm>_<ss>_<ms>_q<quality>.jpg in --output; the _q<quality> part
+is left out at quality 1. Left at 0, the offset and interval are picked from the
+length of the video, longer videos getting fewer frames per minute. HDR video
+is converted to SDR colors.
+
+Needs FFmpeg (ffmpeg) and MediaInfo CLI (mediainfo) on PATH, or their
+locations in the paths.ffmpeg and paths.mediainfo settings.`,
+		Example: `  unifiler video extract-frames movie.mkv -o ./frames
+  unifiler video extract-frames movie.mkv --offset 60 --interval 30 -q 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -287,15 +303,18 @@ func VideoCmd() *cobra.Command {
 			}
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
-			m := NewVideoModule(c, "screenshot")
+			m := NewVideoModule(c, "extract-frames")
 			if err := validateSingleInput(flags.Inputs); err != nil {
 				return m.logError(err)
 			}
 			return m.logError(m.ExtractFrames(flags.Inputs[0], flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
 		},
 	}
-	extractFramesCmd.Flags().IntP("quality", "q", 90, "Quality factor for screenshot in scale 1-100.")
-	extractFramesCmd.Flags().StringP("output", "o", "", "Directory to save screenshots.")
+	extractFramesCmd.Flags().Float64("interval", 0, "Seconds between frames; 0 picks it from the length of the video.")
+	extractFramesCmd.Flags().Float64("limit", 0, "Second to stop at; 0 goes to the end of the video.")
+	extractFramesCmd.Flags().Float64("offset", 0, "Second of the first frame; 0 picks it from the length of the video.")
+	extractFramesCmd.Flags().StringP("output", "o", "", "Folder to save the frames in, created when missing; the video's folder when empty.")
+	extractFramesCmd.Flags().IntP("quality", "q", 3, "JPEG quality, from 1 (best, largest files) to 31 (smallest files).")
 	rootCmd.AddCommand(extractFramesCmd)
 
 	return rootCmd

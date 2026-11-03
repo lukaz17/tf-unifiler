@@ -234,15 +234,30 @@ func ServerCmd() *cobra.Command {
 	// NoArgs rejects a mistyped subcommand, which Cobra would otherwise pass to start as an argument.
 	rootCmd := &cobra.Command{
 		Use:   "server",
-		Short: "Manage RPC server; starts it when run without a subcommand.",
-		Args:  cobra.NoArgs,
-		RunE:  start,
+		Short: "Run in server mode to execute queues commands.",
+		Long: `Run a server that works through a queue of commands. Add --queue to a
+checksum, file, metadata, mirror or video command to send it there: your
+terminal is free right away, and the server runs the command in its own folder,
+with its own settings and environment.
+
+When a command is queued and no server is running, one starts in the
+background, unless server.autostart is false. "unifiler server" alone is the
+same as "unifiler server start". Tasks and their output are kept in memory and
+served over HTTP, at GET /tasks and GET /tasks/<id> on the server's address,
+set by server.http.hostname and server.http.port (http://127.0.0.1:17017 by
+default).`,
+		Args: cobra.NoArgs,
+		RunE: start,
 	}
 
 	generateAPIKeyCmd := &cobra.Command{
 		Use:   "generate-api-key",
-		Short: "Generate a random API key and save it to the configuration file.",
-		Args:  cobra.NoArgs,
+		Short: "Generate a random API key and save it to the config file.",
+		Long: `Generate a random API key and save it as server.apikey in the config file,
+without printing it. The server then requires it from every request, as the
+header "Authorization: Bearer <key>"; --queue and "unifiler server stop" read
+it from the config file. Restart a running server to apply it.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := engine.InitApp(context.TODO())
 			if err != nil {
@@ -254,21 +269,32 @@ func ServerCmd() *cobra.Command {
 			return m.logError(m.GenerateAPIKey(force))
 		},
 	}
-	generateAPIKeyCmd.Flags().Bool("force", false, "Replace the API key already configured.")
+	generateAPIKeyCmd.Flags().Bool("force", false, "Replace the API key already set.")
 	rootCmd.AddCommand(generateAPIKeyCmd)
 
 	startCmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start RPC server.",
-		Args:  cobra.NoArgs,
-		RunE:  start,
+		Short: "Start the server in this terminal.",
+		Long: fmt.Sprintf(`Start the server in this terminal, and run queued commands until Ctrl+C or
+"unifiler server stop". Stopping cancels the queued tasks and cuts off running
+tasks after %s.
+
+Listening beyond this machine (server.http.hostname not a loopback address)
+requires an API key; see "unifiler server generate-api-key".`,
+			serverShutdownTimeout),
+		Args: cobra.NoArgs,
+		RunE: start,
 	}
 	rootCmd.AddCommand(startCmd)
 
 	stopCmd := &cobra.Command{
 		Use:   "stop",
-		Short: "Stop the running RPC server.",
-		Args:  cobra.NoArgs,
+		Short: "Stop the running server and wait until it has stopped.",
+		Long: fmt.Sprintf(`Ask the server at server.http.hostname and server.http.port to stop, and wait
+until it has. Queued tasks are canceled, and running tasks are cut off after
+%s.`,
+			serverShutdownTimeout),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := engine.InitAppWithBanner(context.TODO())
 			if err != nil {

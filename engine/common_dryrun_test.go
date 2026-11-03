@@ -92,6 +92,8 @@ func TestValidateArgs(t *testing.T) {
 		{"rejects an unknown flag", []string{"file", "pack", "--pasword", "secret"}, true},
 		{"rejects an unknown command", []string{"bogus"}, true},
 		{"rejects a bad flag value", []string{"file", "pack", "--dict", "notanint"}, true},
+		{"rejects arguments to mirror export", []string{"mirror", "export", "-w", "ws", "-i", "a.sha256", "a.txt"}, true},
+		{"rejects arguments to a metadata query", []string{"metadata", "query", "hash", "-w", "ws", "a.txt"}, true},
 		{"rejects the client-only server command", []string{"server"}, true},
 		{"rejects the client-only server start command", []string{"server", "start"}, true},
 		{"rejects the client-only queue flag", []string{"file", "hash", "--queue"}, true},

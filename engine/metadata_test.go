@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,45 @@ func TestMetadataQueryWritesToTaskOutput(t *testing.T) {
 				t.Errorf("task output does not contain %q, so the result was printed elsewhere; got:\n%s", tt.want, out.String())
 			}
 		})
+	}
+}
+
+func TestMetadataIndexHonorsDeleteAndUpdate(t *testing.T) {
+	// Not t.TempDir(): the query commands keep metadata.db open, so its cleanup fails on Windows.
+	workspace := filepath.Join(os.TempDir(), "unifiler_metadata_index_flags")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("creating workspace: %v", err)
+	}
+	if err := os.Remove(MetadataWorkspaceDatabase(workspace)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("removing database of an earlier run: %v", err)
+	}
+	inputDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(inputDir, "discarded.txt"), []byte("discarded"), 0644); err != nil {
+		t.Fatalf("creating input: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := RunTask(base, args, context.Background(), &out)
+		return out.String(), err
+	}
+
+	index := []string{"metadata", "index", inputDir, "-w", workspace, "-c", "old", "--delete", "--name", "archive"}
+	if _, err := run(index...); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+	if _, err := run(index...); err == nil {
+		t.Errorf("indexing into an existing archive without --update succeeded, want an error")
+	}
+	if _, err := run(append(index, "--update")...); err != nil {
+		t.Errorf("indexing into an existing archive with --update: %v", err)
+	}
+	out, err := run("metadata", "query", "hash", "-w", workspace, "-c", "old", "--obsoleted")
+	if err != nil {
+		t.Fatalf("querying obsolete files: %v", err)
+	}
+	if !strings.Contains(out, "discarded.txt") {
+		t.Errorf("file indexed with --delete is not listed as obsolete; got:\n%s", out)
 	}
 }
 

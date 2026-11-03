@@ -133,13 +133,24 @@ func (m *ChecksumModule) logError(err error) error {
 func ChecksumCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "checksum",
-		Short: "Checksum file processing.",
+		Short: "Work with checksum files.",
 	}
 	MarkCommandQueueable(rootCmd)
 
 	createCmd := &cobra.Command{
 		Use:   "create <input>...",
-		Short: "Create checksum file.",
+		Short: "Write a checksum file per algorithm for files and folders.",
+		Long: `Hash every file in the inputs, going through folders recursively, and write
+one checksum file per algorithm to the --outdir folder. Each is named
+[<title>].<algorithm> and has "<hash> *<path>" lines, with paths relative to
+--outdir; crc32 is written as an SFV file, [<title>].sfv, with "<path> <hash>"
+lines.
+
+<title> is --title when set, else the last name in --outdir, else, when
+--outdir is "." and the only input is a file, that file's name without its
+extension, else "checksum".`,
+		Example: `  unifiler checksum create ./photos -o ./photos
+  unifiler checksum create a.iso b.iso -o . -a sha256,crc32 -t isos`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := InitAppWithBanner(cmd.Context())
 			if err != nil {
@@ -151,10 +162,10 @@ func ChecksumCmd() *cobra.Command {
 			return m.logError(m.Create(flags.Inputs, flags.Output, flags.Algorithms, flags.OutputName))
 		},
 	}
-	createCmd.Flags().StringSliceP("algorithm", "a", []string{"sha1"}, "Hash algorithms to use, comma-separated list supported. Supported algorithms: crc32, md4, md5, ripemd160, sha1, sha224, sha256, sha384, sha512.")
-	createCmd.Flags().StringArrayP("inputs", "i", []string{}, "Files/Directories to create checksum.")
-	createCmd.Flags().StringP("outdir", "o", "", "Directory to store the calculated checksum file(s).")
-	createCmd.Flags().StringP("title", "t", "", "Output file name. This will override program auto-naming scheme.")
+	createCmd.Flags().StringSliceP("algorithm", "a", []string{"sha1"}, "Hash algorithms, comma-separated; one checksum file is written per algorithm. Supported: crc32, crc32c, md4, md5, ripemd160, sha1, sha224, sha256, sha384, sha512.")
+	createCmd.Flags().StringArrayP("inputs", "i", []string{}, "Files or folders to hash, in addition to the arguments; repeat for several.")
+	createCmd.Flags().StringP("outdir", "o", "", "Folder to write the checksum files to; their paths are relative to it. Required.")
+	createCmd.Flags().StringP("title", "t", "", "Name of the checksum files, written as [<title>].<algorithm>; by default the last name in --outdir.")
 	rootCmd.AddCommand(createCmd)
 
 	return rootCmd

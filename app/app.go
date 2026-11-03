@@ -45,6 +45,6 @@ func Main() {
 func buildRootCmd() *cobra.Command {
 	rootCmd := engine.BuildRootCmd()
 	rootCmd.AddCommand(ServerCmd())
-	rootCmd.PersistentFlags().Bool(queueFlagName, false, "Queue this command to the running TFunifiler server instead of executing immediately.")
+	rootCmd.PersistentFlags().Bool(queueFlagName, false, "Send this command to the background server instead of running it here; see \"unifiler server --help\".")
 	return rootCmd
 }

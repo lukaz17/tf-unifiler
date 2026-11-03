@@ -101,12 +101,14 @@ func BuildRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use: "unifiler",
 		Long: fmt.Sprintf(
-			`TFunifiler v%s.
+			`TFunifiler v%s - T-Force Universal File Operator
+Cross-platform file management solution.
+
 Copyright (C) %d T-Force I/O.
 Licensed under GPL-3.0 license. See COPYING file along with this program for more details.`,
 			version(),
 			buildDate.Year()),
-		Short:   "Cross platform file managements command line utility.",
+		Short:   "T-Force Universal File Operator, cross-platform file management solution.",
 		Version: version(),
 
 		SilenceErrors: true,
