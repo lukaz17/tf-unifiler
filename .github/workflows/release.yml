@@ -16,7 +16,7 @@ env:
   BINARY_NAME: unifiler
   CGO_ENABLED: "0"
   CMD_NAME: .
-  GO_VERSION: "1.25.7"
+  GO_VERSION: "1.27.1"
   GIT_TAG: ${{ github.ref_name }}
 
 jobs:
@@ -38,22 +38,6 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          # * Build cache (Mac)
-          # * Build cache (Windows)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/Library/Caches/go-build
-            ~\AppData\Local\go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
 
       - name: Install zstd (MacOS)
         if: matrix.os == 'macos-latest'
@@ -217,9 +201,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
       # ==============================
       #   Download Artifacts
       # ==============================
@@ -283,10 +264,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          body: |
-            "Created by Github Actions"
+          body: Created by Github Actions
           draft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
           fail_on_unmatched_files: true
           files: |
             ./${{ env.BINARY_NAME }}-${{ github.ref_name }}-linux-amd64.tar.zst
