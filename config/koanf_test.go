@@ -274,6 +274,49 @@ func TestIsPortableFindsMarkerNextToExecutable(t *testing.T) {
 	}
 }
 
+func TestFilePathFollowsPortableMode(t *testing.T) {
+	exec, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locating test binary: %v", err)
+	}
+	marker := filepath.Join(filepath.Dir(exec), "unifiler.portable")
+	userFile, err := configFilePath(false)
+	if err != nil {
+		t.Fatalf("locating user config file: %v", err)
+	}
+	tests := []struct {
+		name      string
+		hasMarker bool
+		want      string
+	}{
+		{"user config folder without marker", false, userFile},
+		{"executable folder with marker", true, filepath.Join(filepath.Dir(exec), configFileName)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.hasMarker {
+				if err := os.WriteFile(marker, nil, 0644); err != nil {
+					t.Fatalf("creating marker: %v", err)
+				}
+				t.Cleanup(func() {
+					if err := os.Remove(marker); err != nil {
+						t.Errorf("removing marker: %v", err)
+					}
+				})
+			}
+
+			got, err := FilePath()
+
+			if err != nil {
+				t.Fatalf("FilePath: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("FilePath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSanitizeKey(t *testing.T) {
 	if got, err := SanitizeKey("Server.APIKey"); err != nil || got != KeyServerAPIKey {
 		t.Errorf("SanitizeKey(%q) = %q, %v; want %q", "Server.APIKey", got, err, KeyServerAPIKey)

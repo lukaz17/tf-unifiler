@@ -121,3 +121,90 @@ func TestConfigSetReplacesKeyOfOtherCase(t *testing.T) {
 		t.Errorf("expected debug set to true, got %q", got)
 	}
 }
+
+func TestConfigResetEmptiesFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+	}{
+		{"file with settings", "debug: true\nserver:\n  apikey: sk-unifiler-sentinel\n"},
+		{"malformed YAML", "log:\n  level: debug\n bad: [\n"},
+		{"unknown key", "logger:\n  level: debug\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "unifiler.yaml")
+			if err := os.WriteFile(path, []byte(tt.contents), 0600); err != nil {
+				t.Fatalf("writing %s: %v", path, err)
+			}
+			base := &Controller{Config: &config.RootConfig{ConfigFile: path}}
+
+			err := RunTask(base, []string{"config", "reset", "--force"}, context.Background(), &bytes.Buffer{})
+
+			if err != nil {
+				t.Fatalf("config reset: %v", err)
+			}
+			assertConfigFileEmpty(t, path)
+		})
+	}
+}
+
+func TestConfigResetCreatesMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "unifiler.yaml")
+	base := &Controller{Config: &config.RootConfig{ConfigFile: path}}
+
+	err := RunTask(base, []string{"config", "reset", "--force"}, context.Background(), &bytes.Buffer{})
+
+	if err != nil {
+		t.Fatalf("config reset: %v", err)
+	}
+	assertConfigFileEmpty(t, path)
+}
+
+func TestConfigResetRefusalKeepsFile(t *testing.T) {
+	const contents = "debug: true\n"
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"without --force", []string{"config", "reset"}},
+		{"with an argument", []string{"config", "reset", "--force", "yes"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "unifiler.yaml")
+			if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+				t.Fatalf("writing %s: %v", path, err)
+			}
+			base := &Controller{Config: &config.RootConfig{ConfigFile: path}}
+
+			err := RunTask(base, tt.args, context.Background(), &bytes.Buffer{})
+
+			if err == nil {
+				t.Errorf("RunTask(%v): expected error, got nil", tt.args)
+			}
+			if data, err := os.ReadFile(path); err != nil || string(data) != contents {
+				t.Errorf("expected %s unchanged, got %q (%v)", path, data, err)
+			}
+		})
+	}
+}
+
+// Fail t unless the config file at path exists, is empty, and loads with no settings.
+func assertConfigFileEmpty(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected %s empty, got %q", path, data)
+	}
+	k, err := config.LoadFile(path)
+	if err != nil {
+		t.Fatalf("loading %s after config reset: %v", path, err)
+	}
+	if keys := k.Keys(); len(keys) != 0 {
+		t.Errorf("expected no settings in %s, got %v", path, keys)
+	}
+}

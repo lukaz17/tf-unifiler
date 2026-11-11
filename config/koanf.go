@@ -113,6 +113,15 @@ func DefaultConfig() (*koanf.Koanf, error) {
 	return k, nil
 }
 
+// Return the path of the config file InitKoanf loads, without reading the file, so it can be located while it is broken.
+func FilePath() (string, error) {
+	portable, err := IsPortable()
+	if err != nil {
+		return "", err
+	}
+	return configFilePath(portable)
+}
+
 // Check if the application is in portable mode, marked by a unifiler.portable file next to the executable.
 func IsPortable() (bool, error) {
 	exec, err := os.Executable()

@@ -100,6 +100,7 @@ func TestValidateArgs(t *testing.T) {
 		{"rejects the non-queueable config export command", []string{"config", "export"}, true},
 		{"rejects the non-queueable config get command", []string{"config", "get", "server.apikey"}, true},
 		{"rejects the non-queueable config set command", []string{"config", "set", "server.apikey", "key"}, true},
+		{"rejects the non-queueable config reset command", []string{"config", "reset", "--force"}, true},
 		{"rejects help", []string{"file", "hash", "--help"}, true},
 		{"rejects version", []string{"--version"}, true},
 		{"rejects a command group", []string{"file"}, true},

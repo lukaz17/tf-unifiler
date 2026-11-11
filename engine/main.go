@@ -24,8 +24,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
+	"github.com/tforceaio/tf-unifiler/config"
 	"github.com/tforceaio/tf-unifiler/diag"
 	"github.com/tforceaio/tf-unifiler/tui"
 )
@@ -51,9 +53,7 @@ func InitApp(ctx context.Context) (*Controller, error) {
 	}
 	c, err := InitController(true)
 	if err != nil {
-		// No configured logger without configuration, so log to the console only.
-		logger := diag.NewLoggerFromWriter(diag.NewLogWriterTo(os.Stdout, tui.IsTTY(), nil))
-		return nil, LogCommandError(logger, err)
+		return nil, LogCommandError(newConsoleLogger(), err)
 	}
 	return c, nil
 }
@@ -151,6 +151,29 @@ func getTaskScopedController(ctx context.Context) *Controller {
 		return nil
 	}
 	return rt.base.fork(rt.out)
+}
+
+// Initialize a Controller without loading the configuration, for commands that must run while the config file is broken.
+func initAppWithoutConfig(ctx context.Context) (*Controller, error) {
+	if c := getTaskScopedController(ctx); c != nil {
+		return c, nil
+	}
+	logger := newConsoleLogger()
+	path, err := config.FilePath()
+	if err != nil {
+		return nil, LogCommandError(logger, err)
+	}
+	return &Controller{
+		Config: &config.RootConfig{ConfigFile: path},
+		Logger: logger,
+		In:     os.Stdin,
+		Out:    os.Stdout,
+	}, nil
+}
+
+// Return a logger writing to the console only, for when no configuration is loaded to set up the log file.
+func newConsoleLogger() zerolog.Logger {
+	return diag.NewLoggerFromWriter(diag.NewLogWriterTo(os.Stdout, tui.IsTTY(), nil))
 }
 
 // Version returns the program's version string, as reported by the root command.

@@ -106,6 +106,23 @@ func (m *ConfigModule) Get(key string) error {
 	return nil
 }
 
+// Replace the YAML config file with an empty one, without reading it, so a broken file can be recovered.
+// Every saved setting, server.apikey included, is erased, so the call is refused unless force is set.
+func (m *ConfigModule) Reset(force bool) error {
+	if !force {
+		return errors.New("resetting erases every saved setting, server.apikey included; pass --force to confirm")
+	}
+
+	if err := m.writeFile(m.cfg.ConfigFile, nil); err != nil {
+		return err
+	}
+
+	m.logger.Info().
+		Str("configFile", m.cfg.ConfigFile).
+		Msg("Configuration reset successfully.")
+	return nil
+}
+
 // Write value of key to active YAML config file.
 func (m *ConfigModule) Set(key, value string) error {
 	if err := validateRequiredString(key, "key"); err != nil {
@@ -254,7 +271,31 @@ and a running server applies the change only after a restart.`,
 	setCmd.Flags().StringP("key", "k", "", "Setting key, such as paths.x7z; same as the <key> argument.")
 	setCmd.Flags().StringP("value", "v", "", "Value to save; same as the <value> argument.")
 
-	cmd.AddCommand(exportCmd, getCmd, setCmd)
+	resetCmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Replace the config file with an empty one.",
+		Long: `Replace unifiler.yaml in the config folder with an empty file, creating it if
+missing, so every setting comes from its environment variable or its default.
+The file is not read first, so this recovers a file other commands reject.
+
+Every saved setting is erased, server.apikey included, so --force is required.
+A running server applies the change only after a restart.`,
+		Example: `  unifiler config reset --force`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := initAppWithoutConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			m := NewConfigModule(c)
+			f := m.ParseConfigFlags(cmd, args)
+			return m.logError(m.Reset(f.Force))
+		},
+	}
+	resetCmd.Flags().Bool("force", false, "Confirm erasing every saved setting.")
+
+	cmd.AddCommand(exportCmd, getCmd, setCmd, resetCmd)
 
 	return cmd
 }
@@ -262,6 +303,7 @@ and a running server applies the change only after a restart.`,
 // ConfigFlags contains all flags used by Config module.
 type ConfigFlags struct {
 	Diff   bool
+	Force  bool
 	Key    string
 	Output string
 	Value  string
@@ -270,6 +312,7 @@ type ConfigFlags struct {
 // Extract all flags from a Cobra Command.
 func (m *ConfigModule) ParseConfigFlags(cmd *cobra.Command, args []string) *ConfigFlags {
 	diff, _ := cmd.Flags().GetBool("diff")
+	force, _ := cmd.Flags().GetBool("force")
 	key, _ := cmd.Flags().GetString("key")
 	output, _ := cmd.Flags().GetString("output")
 	value, _ := cmd.Flags().GetString("value")
@@ -283,6 +326,7 @@ func (m *ConfigModule) ParseConfigFlags(cmd *cobra.Command, args []string) *Conf
 
 	f := &ConfigFlags{
 		Diff:   diff,
+		Force:  force,
 		Output: output,
 		Key:    key,
 		Value:  value,
