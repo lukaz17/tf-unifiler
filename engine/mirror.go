@@ -18,6 +18,7 @@ package engine
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -68,11 +69,11 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	if err != nil {
 		return err
 	}
+	defer checksumReader.Close()
 	items, err := checksum.ParseSha256(checksumReader)
 	if err != nil {
 		return err
 	}
-	defer checksumReader.Close()
 
 	missingItems := []string{}
 	for _, l := range items {
@@ -93,10 +94,16 @@ func (m *MirrorModule) Export(workspaceDir, checksumFile, targetDir string) erro
 	}
 	targetRoot := targetDir
 	if targetRoot == "" {
-		checksumPath, _ := filesys.GetAbsPath(checksumFile)
+		checksumPath, err := filesys.GetAbsPath(checksumFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve checksum file path: %w", err)
+		}
 		targetRoot, _ = filepath.Split(checksumPath)
 	} else {
-		targetRoot, _ = filesys.GetAbsPath(targetDir)
+		targetRoot, err = filesys.GetAbsPath(targetDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve output folder path: %w", err)
+		}
 	}
 	if filesys.IsFileExist(targetRoot) {
 		return errors.New("a file with same name with target root existed")
@@ -210,38 +217,64 @@ func MirrorWorkspaceRoot(workspaceDir string) string {
 func MirrorCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "mirror",
-		Short: "Centralized file repository.",
+		Short: "Manage a content-addressable store of files.",
+		Long: `Manage a content-addressable store, the mirror folder of the workspace given
+with -w, which keeps each distinct file once, named by the SHA-256 of its
+content. Files are added to the store, and folders rebuilt from it, as hard
+links, so every copy of a file shares the same data on disk.
+
+The workspace folder must already exist; "unifiler metadata" can share it.
+
+Hard links cannot cross drives, so the store and the files must be on the same
+drive. Editing a linked file in place changes every copy of it, the one in the
+store included.`,
 	}
 	MarkCommandQueueable(rootCmd)
-	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Directory contains Unifiler workspace.")
+	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Workspace folder, whose mirror folder is the store; it must exist. Required.")
 
 	exportCmd := &cobra.Command{
 		Use:   "export",
-		Short: "Create file structure defined by checksum file.",
+		Short: "Rebuild a folder tree from the store using a checksum file.",
+		Long: `Link each file listed in the --checksum file, such as one made by
+"unifiler checksum create -a sha256", from the store into --output, at the
+path the checksum file lists for it. Nothing is linked when the store lacks a
+listed hash.`,
+		Example: `  unifiler mirror export -w ./ws -i "./photos/[photos].sha256" -o ./restored`,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, []string{})
 			m := NewMirrorModule(c, "export")
 			return m.logError(m.Export(flags.WorkspaceDir, flags.ChecksumFile, flags.Output))
 		},
 	}
-	exportCmd.Flags().StringP("checksum", "i", "", "Checksum file path. Only supported SHA-256.")
-	exportCmd.Flags().StringP("output", "o", "", "Directory where the files will be exported.")
+	exportCmd.Flags().StringP("checksum", "i", "", "SHA-256 checksum file listing the files to rebuild. Required.")
+	exportCmd.Flags().StringP("output", "o", "", "Folder to rebuild the files in; the checksum file's folder when empty.")
 	rootCmd.AddCommand(exportCmd)
 
 	scanCmd := &cobra.Command{
-		Use:   "scan",
-		Short: "Scan inputs and import them to mirror repository.",
+		Use:   "scan <input>...",
+		Short: "Add files and folders to the store.",
+		Long: `Hash every file in the inputs, going through folders recursively, and link it
+into the store as <sha256>, unless the store already has that content. Each
+file's path and SHA-256 are saved to mirror-<timestamp>.json in the store.`,
+		Example: `  unifiler mirror scan ./photos -w ./ws`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseMirrorFlags(cmd, args)
-			m := NewMirrorModule(c, "export")
+			m := NewMirrorModule(c, "scan")
 			return m.logError(m.Scan(flags.WorkspaceDir, flags.Inputs))
 		},
 	}
-	scanCmd.Flags().StringSliceP("inputs", "i", []string{}, "Files/Directories to import.")
+	scanCmd.Flags().StringArrayP("inputs", "i", []string{}, "Files or folders to add, in addition to the arguments; repeat for several.")
 	rootCmd.AddCommand(scanCmd)
 
 	return rootCmd
@@ -258,7 +291,7 @@ type MirrorFlags struct {
 // Extract all flags from a Cobra Command.
 func ParseMirrorFlags(cmd *cobra.Command, args []string) *MirrorFlags {
 	checksumFile, _ := cmd.Flags().GetString("checksum")
-	inputs, _ := cmd.Flags().GetStringSlice("inputs")
+	inputs, _ := cmd.Flags().GetStringArray("inputs")
 	output, _ := cmd.Flags().GetString("output")
 	workspaceDir, _ := cmd.Flags().GetString("workspace")
 	inputs = append(args, inputs...)

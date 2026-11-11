@@ -60,7 +60,10 @@ func (m *VideoModule) Info(file string) error {
 		Str("input", filesys.NormalizePath(file, true)).
 		Msg("Start analyzing file information.")
 
-	inputFile, _ := filesys.GetAbsPath(file)
+	inputFile, err := filesys.GetAbsPath(file)
+	if err != nil {
+		return fmt.Errorf("failed to resolve input path: %w", err)
+	}
 	miFile := inputFile + ".mediainfo.json"
 	miOptions := &exec.MediaInfoOptions{
 		InputFile:    inputFile,
@@ -68,7 +71,7 @@ func (m *VideoModule) Info(file string) error {
 		OutputFile:   miFile,
 	}
 
-	_, err := exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
+	_, err = exec.Run(m.cfg.Path.MediaInfoPath, exec.NewMediaInfoArgs(miOptions), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -84,7 +87,7 @@ func (m *VideoModule) Info(file string) error {
 }
 
 // Take screenshots for videos file from offset of the video file, for a limit duration, every interval.
-// All time are in seconds. Quality factor range from 1-100.
+// All time are in seconds. Quality is FFmpeg's JPEG scale, from 1 (best) to 31.
 func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64, quality int, outputDir string) error {
 	if err := validateInput(file, "input"); err != nil {
 		return err
@@ -104,7 +107,10 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 		Str("output", filesys.NormalizePath(outputDir, true)).
 		Msg("Extracting frames for video file.")
 
-	inputFile, _ := filesys.CreateEntry(file)
+	inputFile, err := filesys.CreateEntry(file)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %w", err)
+	}
 	outputRoot := opx.Ternary(outputDir == "", filepath.Dir(inputFile.AbsolutePath), outputDir)
 	if filesys.IsFileExist(outputRoot) {
 		return errors.New("a file with same name with target root existed")
@@ -120,6 +126,12 @@ func (m *VideoModule) ExtractFrames(file string, interval, offset, limit float64
 		Str("output", filesys.NormalizePath(outputDir, true)).
 		Msg("Extracted frames for video file.")
 	return nil
+}
+
+// Return seconds in milliseconds.
+func (m *VideoModule) convertSecondToMs(seconds float64) *big.Int {
+	// Rounded, since seconds*1000 can land just below a whole millisecond, such as 1.001 to 1000.9999999999999.
+	return big.NewInt(int64(math.Round(seconds * 1000)))
 }
 
 // Return timecode string from timeMs in milliseconds.
@@ -141,7 +153,7 @@ func (m *VideoModule) defaultScreenshotParameter(lengthMs *big.Int) (*big.Int, *
 		offset   *big.Int
 		interval *big.Int
 	}{
-		{big.NewInt(120), big.NewInt(1000), big.NewInt(2500)},       // 0 -> 47
+		{big.NewInt(120000), big.NewInt(1000), big.NewInt(2500)},    // 0 -> 47
 		{big.NewInt(420000), big.NewInt(1300), big.NewInt(4300)},    // 27 -> 97
 		{big.NewInt(1200000), big.NewInt(1700), big.NewInt(7100)},   // 59 -> 168
 		{big.NewInt(3600000), big.NewInt(2300), big.NewInt(12300)},  // 97 -> 292
@@ -181,7 +193,7 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 		return 0, err
 	}
 	limitF64 := opx.Ternary(limit == 0, duration, math.Min(duration, limit))
-	limitMs := big.NewInt(int64(limitF64 * float64(1000)))
+	limitMs := m.convertSecondToMs(limitF64)
 
 	if !filesys.IsDirectoryExist(outputRoot) {
 		err = filesys.CreateDirectoryRecursive(outputRoot)
@@ -198,8 +210,8 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 		m.logger.Info().Str("param", vfHDR).Msg("The video is HDR, Unifiler will attempt to apply colorspace conversion.")
 	}
 	offsetDef, intervalDef := m.defaultScreenshotParameter(limitMs)
-	offsetMs := opx.Ternary(offset == 0, offsetDef, big.NewInt(int64(offset*1000)))
-	intervalMs := opx.Ternary(interval == 0, intervalDef, big.NewInt(int64(interval*1000)))
+	offsetMs := opx.Ternary(offset == 0, offsetDef, m.convertSecondToMs(offset))
+	intervalMs := opx.Ternary(interval == 0, intervalDef, m.convertSecondToMs(interval))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -220,8 +232,8 @@ func (m *VideoModule) extractFrames(inputFile *filesys.FsEntry, outputRoot strin
 		}
 		outFile := opx.Ternary(quality == 1, fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t)), fmt.Sprintf(outputFilenameFormat, m.convertSecondToTimeCode(t), quality))
 		ffmOptions := &exec.FFmpegArgsOptions{
-			InputFile:      inputFile.AbsolutePath,
-			InputStartTime: nullable.FromInt(int(t.Int64()) / 1000),
+			InputFile:        inputFile.AbsolutePath,
+			InputStartTimeMs: nullable.FromInt(int(t.Int64())),
 
 			OutputFile:       outFile,
 			OutputFrameCount: nullable.FromInt(1),
@@ -253,16 +265,25 @@ func (m *VideoModule) logError(err error) error {
 func VideoCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "video",
-		Short: "Batch processing video file.",
+		Short: "Work with video files.",
 	}
 	MarkCommandQueueable(rootCmd)
-	rootCmd.PersistentFlags().StringP("file", "i", "", "Input video file.")
+	rootCmd.PersistentFlags().StringP("file", "i", "", "Video file; same as the <file> argument.")
 
 	infoCmd := &cobra.Command{
-		Use:   "info",
-		Short: "Analyze video file.",
+		Use:   "info <file>",
+		Short: "Save a video's media information to <file>.mediainfo.json.",
+		Long: `Run MediaInfo on the video and save its report, as JSON, to
+<file>.mediainfo.json next to it.
+
+Needs MediaInfo CLI (mediainfo) on PATH, or its location in the
+paths.mediainfo setting.`,
+		Example: `  unifiler video info movie.mkv`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
 			m := NewVideoModule(c, "info")
@@ -275,21 +296,37 @@ func VideoCmd() *cobra.Command {
 	rootCmd.AddCommand(infoCmd)
 
 	extractFramesCmd := &cobra.Command{
-		Use:   "extract-frames",
-		Short: "Extract multiple frames in video file.",
+		Use:   "extract-frames <file>",
+		Short: "Save JPEG frames taken across a video.",
+		Long: `Save one JPEG frame every --interval seconds, from --offset to --limit, as
+<file name>_<h>_<mm>_<ss>_<ms>_q<quality>.jpg in --output; the _q<quality> part
+is left out at quality 1. Left at 0, the offset and interval are picked from the
+length of the video, longer videos getting fewer frames per minute. HDR video
+is converted to SDR colors.
+
+Needs FFmpeg (ffmpeg) and MediaInfo CLI (mediainfo) on PATH, or their
+locations in the paths.ffmpeg and paths.mediainfo settings.`,
+		Example: `  unifiler video extract-frames movie.mkv -o ./frames
+  unifiler video extract-frames movie.mkv --offset 60 --interval 30 -q 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := InitAppWithBanner(cmd.Context())
+			c, err := InitAppWithBanner(cmd.Context())
+			if err != nil {
+				return err
+			}
 			defer c.Close()
 			flags := ParseVideoFlags(cmd, args)
-			m := NewVideoModule(c, "screenshot")
+			m := NewVideoModule(c, "extract-frames")
 			if err := validateSingleInput(flags.Inputs); err != nil {
 				return m.logError(err)
 			}
 			return m.logError(m.ExtractFrames(flags.Inputs[0], flags.Interval, flags.Offset, flags.Limit, flags.Quality, flags.OutputDir))
 		},
 	}
-	extractFramesCmd.Flags().IntP("quality", "q", 90, "Quality factor for screenshot in scale 1-100.")
-	extractFramesCmd.Flags().StringP("output", "o", "", "Directory to save screenshots.")
+	extractFramesCmd.Flags().Float64("interval", 0, "Seconds between frames; 0 picks it from the length of the video.")
+	extractFramesCmd.Flags().Float64("limit", 0, "Second to stop at; 0 goes to the end of the video.")
+	extractFramesCmd.Flags().Float64("offset", 0, "Second of the first frame; 0 picks it from the length of the video.")
+	extractFramesCmd.Flags().StringP("output", "o", "", "Folder to save the frames in, created when missing; the video's folder when empty.")
+	extractFramesCmd.Flags().IntP("quality", "q", 3, "JPEG quality, from 1 (best, largest files) to 31 (smallest files).")
 	rootCmd.AddCommand(extractFramesCmd)
 
 	return rootCmd

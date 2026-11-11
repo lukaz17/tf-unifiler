@@ -32,11 +32,7 @@ import (
 )
 
 func TestMetadataQueryWritesToTaskOutput(t *testing.T) {
-	// Not t.TempDir(): the query commands keep metadata.db open, so its cleanup fails on Windows.
-	workspace := filepath.Join(os.TempDir(), "unifiler_metadata_query_output")
-	if err := os.MkdirAll(workspace, 0755); err != nil {
-		t.Fatalf("creating workspace: %v", err)
-	}
+	workspace := t.TempDir()
 	base := &Controller{Config: &config.RootConfig{}}
 	tests := []struct {
 		name string
@@ -55,6 +51,102 @@ func TestMetadataQueryWritesToTaskOutput(t *testing.T) {
 			}
 			if !strings.Contains(out.String(), tt.want) {
 				t.Errorf("task output does not contain %q, so the result was printed elsewhere; got:\n%s", tt.want, out.String())
+			}
+		})
+	}
+}
+
+func TestMetadataIndexHonorsDeleteAndUpdate(t *testing.T) {
+	workspace := t.TempDir()
+	inputDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(inputDir, "discarded.txt"), []byte("discarded"), 0644); err != nil {
+		t.Fatalf("creating input: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := RunTask(base, args, context.Background(), &out)
+		return out.String(), err
+	}
+
+	index := []string{"metadata", "index", inputDir, "-w", workspace, "-c", "old", "--delete", "--name", "archive"}
+	if _, err := run(index...); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+	if _, err := run(index...); err == nil {
+		t.Errorf("indexing into an existing archive without --update succeeded, want an error")
+	}
+	if _, err := run(append(index, "--update")...); err != nil {
+		t.Errorf("indexing into an existing archive with --update: %v", err)
+	}
+	out, err := run("metadata", "query", "hash", "-w", workspace, "-c", "old", "--obsoleted")
+	if err != nil {
+		t.Fatalf("querying obsolete files: %v", err)
+	}
+	if !strings.Contains(out, "discarded.txt") {
+		t.Errorf("file indexed with --delete is not listed as obsolete; got:\n%s", out)
+	}
+}
+
+func TestMetadataIndexReturnsDatabaseError(t *testing.T) {
+	workspace := t.TempDir()
+	// A folder in place of metadata.db makes connecting to the database fail.
+	if err := os.Mkdir(MetadataWorkspaceDatabase(workspace), 0755); err != nil {
+		t.Fatalf("creating folder in place of database: %v", err)
+	}
+	inputDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(inputDir, "photo.jpg"), []byte("photo"), 0644); err != nil {
+		t.Fatalf("creating input: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"archive mode", []string{"metadata", "index", inputDir, "-w", workspace, "--name", "archive"}},
+		{"collections mode", []string{"metadata", "index", inputDir, "-w", workspace, "-c", "photos"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := RunTask(base, tt.args, context.Background(), &out)
+
+			if err == nil {
+				t.Errorf("RunTask(%v) succeeded without a database, want an error", tt.args)
+			}
+		})
+	}
+}
+
+func TestMetadataCommandsCloseDatabase(t *testing.T) {
+	inputDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(inputDir, "photo.jpg"), []byte("photo"), 0644); err != nil {
+		t.Fatalf("creating input: %v", err)
+	}
+	base := &Controller{Config: &config.RootConfig{}}
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"refine", []string{"metadata", "refine", inputDir}},
+		{"hash query", []string{"metadata", "query", "hash"}},
+		{"session query", []string{"metadata", "query", "session"}},
+		{"set query", []string{"metadata", "query", "set"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			args := append(tt.args, "-w", workspace)
+
+			var out bytes.Buffer
+			err := RunTask(base, args, context.Background(), &out)
+
+			if err != nil {
+				t.Fatalf("RunTask(%v): %v", args, err)
+			}
+			// Windows refuses to delete a file that is still open.
+			if err := os.Remove(MetadataWorkspaceDatabase(workspace)); err != nil {
+				t.Errorf("deleting metadata.db after %s: %v", tt.name, err)
 			}
 		})
 	}

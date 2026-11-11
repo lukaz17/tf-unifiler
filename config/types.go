@@ -20,13 +20,17 @@ const KeyServerAPIKey = "server.apikey"
 
 // RootConfig contains all available configurations for the application.
 type RootConfig struct {
-	ConfigDir  string        `koanf:"-"`
-	ConfigFile string        `koanf:"-"`
-	Portable   bool          `koanf:"-"`
-	Debug      bool          `koanf:"debug"`
-	Logger     *LoggerConfig `koanf:"log"`
-	Path       *PathConfig   `koanf:"paths"`
-	Server     *ServerConfig `koanf:"server"`
+	ConfigDir  string `koanf:"-"`
+	ConfigFile string `koanf:"-"`
+	Portable   bool   `koanf:"-"`
+
+	AppliedEnvVars []string `koanf:"-"`
+	IgnoredEnvVars []string `koanf:"-"`
+
+	Debug  bool          `koanf:"debug"`
+	Logger *LoggerConfig `koanf:"log"`
+	Path   *PathConfig   `koanf:"paths"`
+	Server *ServerConfig `koanf:"server"`
 }
 
 // HTTPConfig contains configurations for HTTP server connection.

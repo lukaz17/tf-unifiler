@@ -16,6 +16,7 @@
 package engine
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -44,15 +45,18 @@ type Controller struct {
 
 // Entrypoint for creating new instance of Controller.
 // useFS will instruct this function to read configurations and create log file.
-func NewController(useFS bool) *Controller {
+func InitController(useFS bool) (*Controller, error) {
 	cfg, err := config.InitKoanf(useFS)
-	writer, logFile, err2 := diag.NewLogWriter(cfg, useFS)
+	if err != nil {
+		return nil, fmt.Errorf("loading configuration: %w", err)
+	}
+	writer, logFile, err := diag.NewLogWriter(cfg, useFS)
 	logger := diag.NewLoggerFromWriter(writer)
 	if err != nil {
-		logger.Err(err).Msg("error initializing config")
+		logger.Err(err).Msg("error initializing log file")
 	}
-	if err2 != nil {
-		logger.Err(err2).Msg("error initializing log file")
+	if len(cfg.IgnoredEnvVars) > 0 {
+		logger.Warn().Strs("variables", cfg.IgnoredEnvVars).Msg("Ignoring environment variables that name no setting.")
 	}
 	interactive := tui.IsTTY()
 	var notifier diag.Notifier
@@ -72,7 +76,7 @@ func NewController(useFS bool) *Controller {
 		Interactive: interactive,
 
 		logFile: logFile,
-	}
+	}, nil
 }
 
 // Execute additional clean up when terminate the app.

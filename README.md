@@ -36,9 +36,12 @@ unifiler config get paths.x7z                   # print the value in use
 unifiler config set paths.x7z /opt/7-zip/7zz    # save a value to the config file
 unifiler config export                          # print all the settings in use, as YAML
 unifiler config export --diff -o settings.yaml  # save only the settings that differ from the defaults
+unifiler config reset --force                   # empty the config file
 ```
 
 `config export` includes `server.apikey` when an API key is set, so keep its output private.
+
+`config reset` doesn't read the config file, so it recovers one that the other commands reject. It erases every saved setting, `server.apikey` included.
 
 ### Workspace
 

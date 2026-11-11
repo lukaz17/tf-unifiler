@@ -85,7 +85,10 @@ func TestServerCommandResolution(t *testing.T) {
 }
 
 func TestServerIsNotRunnableAsTask(t *testing.T) {
-	c := engine.NewController(false)
+	c, err := engine.InitController(false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer c.Close()
 
 	for _, args := range [][]string{{"server"}, {"server", "start"}, {"server", "stop"}} {

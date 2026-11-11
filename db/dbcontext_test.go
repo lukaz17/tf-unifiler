@@ -23,15 +23,46 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/rs/zerolog"
 	"github.com/tforce-io/tf-golib/multiarch"
 	"github.com/tforce-io/tf-golib/opx"
+	"gorm.io/gorm"
 )
 
 func TestOpen(t *testing.T) {
 	ctx := getTestDB("DbContext", "Open")
 	if ctx == nil {
 		t.Error("cannot open database")
+	}
+}
+
+func TestConnectClosesDatabaseWhenMigrationFails(t *testing.T) {
+	dbFile := filepath.Join(t.TempDir(), "unifiler.db")
+	// A view named like a table makes the migration fail after the database is opened.
+	blocker, err := gorm.Open(sqlite.Open(dbFile), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("creating database: %v", err)
+	}
+	if err := blocker.Exec("CREATE VIEW archives AS SELECT 1 AS id").Error; err != nil {
+		t.Fatalf("creating view: %v", err)
+	}
+	blockerDB, err := blocker.DB()
+	if err != nil {
+		t.Fatalf("getting connection: %v", err)
+	}
+	if err := blockerDB.Close(); err != nil {
+		t.Fatalf("closing database: %v", err)
+	}
+
+	_, err = Connect(dbFile, zerolog.Nop())
+
+	if err == nil {
+		t.Fatalf("Connect succeeded with a view in place of a table, want an error")
+	}
+	// Windows refuses to delete a file that is still open.
+	if err := os.Remove(dbFile); err != nil {
+		t.Errorf("deleting database after failed Connect: %v", err)
 	}
 }
 

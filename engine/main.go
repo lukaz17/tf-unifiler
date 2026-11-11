@@ -24,9 +24,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/tforce-io/tf-golib/opx"
-	"github.com/tforceaio/tf-unifiler/filesys"
+	"github.com/tforceaio/tf-unifiler/config"
+	"github.com/tforceaio/tf-unifiler/diag"
+	"github.com/tforceaio/tf-unifiler/tui"
 )
 
 var majorVersion = 0
@@ -44,25 +47,27 @@ type taskRuntimeValue struct {
 }
 
 // Initialize configurations, loggings for internal modules.
-func InitApp(ctx context.Context) *Controller {
+func InitApp(ctx context.Context) (*Controller, error) {
 	if c := getTaskScopedController(ctx); c != nil {
-		return c
+		return c, nil
 	}
-	return NewController(true)
+	c, err := InitController(true)
+	if err != nil {
+		return nil, LogCommandError(newConsoleLogger(), err)
+	}
+	return c, nil
 }
 
 // Initialize configurations, loggings for internal modules, and display app banner.
-func InitAppWithBanner(ctx context.Context) *Controller {
+func InitAppWithBanner(ctx context.Context) (*Controller, error) {
 	if c := getTaskScopedController(ctx); c != nil {
-		return c
+		return c, nil
 	}
 
-	ctrl := InitApp(ctx)
-
-	pwd, _ := os.Getwd()
-	pwd, _ = filesys.GetAbsPath(pwd)
-	exec, _ := os.Executable()
-	exec, _ = filesys.GetAbsPath(exec)
+	ctrl, err := InitApp(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	fmt.Printf("\nTFunifiler v%s\n", version())
 	gitDate2, _ := time.Parse("20060102", gitDate)
@@ -70,13 +75,24 @@ func InitAppWithBanner(ctx context.Context) *Controller {
 	fmt.Printf("Copyright (C) %d T-Force I/O\n", buildDate.Year())
 	fmt.Printf("Licensed under GPL-3.0 license. See COPYING file along with this program for more details.\n\n")
 	ctrl.Logger.Info().Msg("-----------------")
-	ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	if pwd, err := os.Getwd(); err != nil {
+		ctrl.Logger.Warn().Err(err).Msg("Cannot locate working directory.")
+	} else {
+		ctrl.Logger.Info().Msgf("Working directory %s", pwd)
+	}
 	ctrl.Logger.Info().Msgf("Config directory %s", ctrl.Config.ConfigDir)
-	ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	if exec, err := os.Executable(); err != nil {
+		ctrl.Logger.Warn().Err(err).Msg("Cannot locate executable file.")
+	} else {
+		ctrl.Logger.Info().Msgf("Executable file %s", exec)
+	}
 	ctrl.Logger.Info().Msgf("Portable mode %t", ctrl.Config.Portable)
+	if len(ctrl.Config.AppliedEnvVars) > 0 {
+		ctrl.Logger.Info().Msgf("Environment variables overriding config %s", strings.Join(ctrl.Config.AppliedEnvVars, ", "))
+	}
 	ctrl.Logger.Info().Msg("-----------------")
 
-	return ctrl
+	return ctrl, nil
 }
 
 // Assemble the root command with every commands defined in the engine.
@@ -87,12 +103,14 @@ func BuildRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use: "unifiler",
 		Long: fmt.Sprintf(
-			`TFunifiler v%s.
+			`TFunifiler v%s - T-Force Universal File Operator
+Cross-platform file management solution.
+
 Copyright (C) %d T-Force I/O.
 Licensed under GPL-3.0 license. See COPYING file along with this program for more details.`,
 			version(),
 			buildDate.Year()),
-		Short:   "Cross platform file managements command line utility.",
+		Short:   "T-Force Universal File Operator, cross-platform file management solution.",
 		Version: version(),
 
 		SilenceErrors: true,
@@ -133,6 +151,29 @@ func getTaskScopedController(ctx context.Context) *Controller {
 		return nil
 	}
 	return rt.base.fork(rt.out)
+}
+
+// Initialize a Controller without loading the configuration, for commands that must run while the config file is broken.
+func initAppWithoutConfig(ctx context.Context) (*Controller, error) {
+	if c := getTaskScopedController(ctx); c != nil {
+		return c, nil
+	}
+	logger := newConsoleLogger()
+	path, err := config.FilePath()
+	if err != nil {
+		return nil, LogCommandError(logger, err)
+	}
+	return &Controller{
+		Config: &config.RootConfig{ConfigFile: path},
+		Logger: logger,
+		In:     os.Stdin,
+		Out:    os.Stdout,
+	}, nil
+}
+
+// Return a logger writing to the console only, for when no configuration is loaded to set up the log file.
+func newConsoleLogger() zerolog.Logger {
+	return diag.NewLoggerFromWriter(diag.NewLogWriterTo(os.Stdout, tui.IsTTY(), nil))
 }
 
 // Version returns the program's version string, as reported by the root command.
